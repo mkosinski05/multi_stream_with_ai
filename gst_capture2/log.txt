@@ -1,0 +1,28 @@
+Detaching from process 463
+Detaching from process 464
+Unable to parse link: Invalid argument (22)
+Detaching from process 465
+Unable to setup formats: Invalid argument (22)
+Detaching from process 466
+Unable to setup formats: No such file or directory (2)
+Pipeline pipeline0 thread started: 281474829468128
+Detaching from process 469
+Detaching from process 470
+Detaching from process 471
+Unable to setup formats: Invalid argument (22)
+Detaching from process 472
+
+
+renesas,cru-r9a09g057 (platform:16000000.cru0):
+	/dev/media0
+
+RZG2L_CRU (platform:16010000.cru1):
+	/dev/video0
+	/dev/media1
+
+RZG2L_CRU (platform:16020000.cru2):
+	/dev/video1
+	/dev/media2
+
+renesas,cru-r9a09g057 (platform:16030000.cru3):
+	/dev/media3
