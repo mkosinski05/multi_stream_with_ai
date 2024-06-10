@@ -1,0 +1,365 @@
+
+/*****************************************
+* includes
+******************************************/
+#include "MeraDrpRuntimeWrapper.h"
+#include <linux/drpai.h>
+#include <linux/input.h>
+#include <builtin_fp16.h>
+#include <opencv2/opencv.hpp>
+
+//add
+#include<iostream>
+#include<fstream>
+
+#include "inference.h"
+
+using namespace std;
+using namespace cv;
+
+/******************************************************************************
+*           Global Variables
+*******************************************************************************/
+static float drpai_output_buf[INF_OUT_SIZE];
+static int32_t drp_max_freq;
+static int32_t drp_freq;
+
+extern void yolov2_parser(float *floatarr);
+extern uint32_t  draw_bounding_box(void);
+
+/*****************************************
+* Function Name : get_drpai_start_addr
+* Description   : Function to get the start address of DRPAImem.
+* Arguments     : drpai_fd: DRP-AI file descriptor
+* Return value  : If non-zero, DRP-AI memory start address.
+*                 0 is failure.
+******************************************/
+uint64_t get_drpai_start_addr(int drpai_fd)
+
+{
+    int ret = 0;
+    drpai_data_t drpai_data;
+
+    errno = 0;
+
+    /* Get DRP-AI Memory Area Address via DRP-AI Driver */
+    ret = ioctl(drpai_fd , DRPAI_GET_DRPAI_AREA, &drpai_data);
+    if (-1 == ret)
+    {
+        std::cerr << "[ERROR] Failed to get DRP-AI Memory Area : errno=" << errno << std::endl;
+        return 0;
+    }
+
+    return drpai_data.address;
+}
+
+/*****************************************
+* Function Name : set_drpai_freq
+* Description   : Function to set the DRP and DRP-AI frequency.
+* Arguments     : drpai_fd: DRP-AI file descriptor
+* Return value  : 0 if succeeded
+*                 not 0 otherwise
+******************************************/
+int set_drpai_freq(int drpai_fd)
+{
+    int ret = 0;
+    uint32_t data;
+
+    errno = 0;
+    data = DRP_MAX_FREQ;
+    ret = ioctl(drpai_fd , DRPAI_SET_DRP_MAX_FREQ, &data);
+    if (-1 == ret)
+    {
+        std::cerr << "[ERROR] Failed to set DRP Max Frequency : errno=" << errno << std::endl;
+        return -1;
+    }
+
+    errno = 0;
+    data = DRPAI_FREQ;
+    ret = ioctl(drpai_fd , DRPAI_SET_DRPAI_FREQ, &data);
+    if (-1 == ret)
+    {
+        std::cerr << "[ERROR] Failed to set DRP-AI Frequency : errno=" << errno << std::endl;
+        return -1;
+    }
+
+    return 0;
+}
+
+
+/*****************************************
+* Function Name : init_drpai
+* Description   : Function to initialize DRP-AI.
+* Arguments     : drpai_fd: DRP-AI file descriptor
+* Return value  : If non-zero, DRP-AI memory start address.
+*                 0 is failure.
+******************************************/
+uint64_t init_drpai(int drpai_fd)
+
+{
+    int ret = 0;
+    uint64_t drpai_addr = 0;
+
+    /*Get DRP-AI memory start address*/
+    drpai_addr = get_drpai_start_addr(drpai_fd);
+    if (drpai_addr == 0)
+    {
+        return 0;
+    }
+
+    /*Set DRP-AI frequency*/
+    ret = set_drpai_freq(drpai_fd);
+    if (ret != 0)
+    {
+        return 0;
+    }
+
+
+    return drpai_addr;
+}
+
+/*****************************************
+ * Function Name     : float16_to_float32
+ * Description       : Function by Edgecortex. Cast uint16_t a into float value.
+ * Arguments         : a = uint16_t number
+ * Return value      : float = float32 number
+ ******************************************/
+float float16_to_float32(uint16_t a)
+{
+    return __extendXfYf2__<uint16_t, uint16_t, 10, float, uint32_t, 23>(a);
+}
+
+/*****************************************
+ * Function Name     : load_label_file
+ * Description       : Load label list text file and return the label list that contains the label.
+ * Arguments         : label_file_name = filename of label list. must be in txt format
+ * Return value      : vector<string> list = list contains labels
+ *                     empty if error occurred
+ ******************************************/
+vector<string> load_label_file(string label_file_name)
+{
+    vector<string> list = {};
+    vector<string> empty = {};
+    ifstream infile(label_file_name);
+
+    if (!infile.is_open())
+    {
+        return list;
+    }
+
+    string line = "";
+    while (getline(infile, line))
+    {
+        list.push_back(line);
+        if (infile.fail())
+        {
+            return empty;
+        }
+    }
+
+    return list;
+}
+
+void * thread_infer(void * p_param) 
+{
+
+    inf_data_t * p_data = (inf_data_t *)p_param;
+
+    /* V4L2 buffer */
+    //struct v4l2_buffer cam_buf;
+
+    /* true:  The loop is running.
+     * false: The loop just stopped */
+    bool is_running = true;
+
+    bool runtime_status = false;
+
+    /* DRP-AI TVM[*1] Runtime object */
+    MeraDrpRuntimeWrapper runtime;
+
+    /* Temp frame */
+    Mat frame1;
+    Mat g_frame;
+
+    float FPS = 0;
+    long long PREPROCESS_START_TIME = 0;
+
+    float fps = 0;
+    float TOTAL_TIME = 0;
+    float INF_TIME= 0;
+    float POST_PROC_TIME = 0;
+    float PRE_PROC_TIME = 0;
+    int32_t HEAD_COUNT= 0;
+
+    Size size(MODEL_IN_H, MODEL_IN_W);
+
+    int drpai_fd = open("/dev/drpai0", O_RDWR);
+    assert (0 < drpai_fd);
+
+    /*Load Label from label_list file*/
+    label_file_map = load_label_file(label_list);
+
+    /*Initialzie DRP-AI (Get DRP-AI memory address and set DRP-AI frequency)*/
+    uint64_t drpaimem_addr_start = init_drpai(drpai_fd);
+
+    assert (drpaimem_addr_start != 0);
+
+
+    /*Load model_dir structure and its weight to runtime object */
+    runtime_status = runtime.LoadModel(model_dir, drpaimem_addr_start + DRPAI_MEM_OFFSET);
+    assert(runtime_status);
+
+    ofstream outputfile("ai_output.txt", ios::app);
+    
+     while (is_running)
+    {
+        /* Receive camera's buffer */
+        //assert(v4l2_dequeue_buf(p_data->cam_fd, &cam_buf));
+
+        
+        /**********************************************************************
+         *      DRP-AI TVM Preprocessing 
+        ***********************************************************************/
+       /* Preprocess time start */
+        auto t0 = std::chrono::high_resolution_clock::now();
+        // add
+            std::chrono::system_clock::time_point tp = std::chrono::system_clock::now();
+            std::chrono::milliseconds tp_msec = std::chrono::duration_cast<std::chrono::milliseconds>(tp.time_since_epoch());
+            PREPROCESS_START_TIME = tp_msec.count();
+        //    PREPROCESS_START_TIME = std::chrono::system_clock::to_time_t(t0);;
+        //    PREPROCESS_START_TIME = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());;
+
+        //g_frame = Mat(size, CV_8UC3, p_data->p_yuyv_bufs[cam_buf.index].virt_addr );
+
+
+        /*resize the image to the model input size*/
+        resize(g_frame, frame1, size);
+
+        /* changing channel from hwc to chw */
+        vector<Mat> rgb_images;
+        split(frame1, rgb_images);
+        Mat m_flat_r = rgb_images[0].reshape(1, 1);
+        Mat m_flat_g = rgb_images[1].reshape(1, 1);
+        Mat m_flat_b = rgb_images[2].reshape(1, 1);
+        Mat matArray[] = {m_flat_r, m_flat_g, m_flat_b};
+        Mat frameCHW;
+        hconcat(matArray, 3, frameCHW);
+        /*convert to FP32*/
+        frameCHW.convertTo(frameCHW, CV_32FC3);
+
+        /* normailising  pixels */
+        divide(frameCHW, 255.0, frameCHW);
+
+        /* DRP AI input image should be continuous buffer */
+        if (!frameCHW.isContinuous())
+            frameCHW = frameCHW.clone();
+
+        Mat frame = frameCHW;
+        int ret = 0;
+
+        /* Preprocess time ends*/
+        auto t1 = std::chrono::high_resolution_clock::now();
+
+        /**********************************************************************
+         *      DRP-AI TVM Runtime inference
+        ***********************************************************************/
+
+        /*start inference using drp runtime*/
+        runtime.SetInput(0, frame.ptr<float>());
+
+        /* Inference time start */
+        auto t2 = std::chrono::high_resolution_clock::now();
+        runtime.Run();
+        /* Inference time end */
+        auto t3 = std::chrono::high_resolution_clock::now();
+        auto inf_duration = std::chrono::duration_cast<std::chrono::microseconds>(t3 - t2).count();
+
+        /* Postprocess time start */
+        auto t4 = std::chrono::high_resolution_clock::now();
+
+        /*load inference out on drpai_out_buffer*/
+        int32_t i = 0;
+        int32_t output_num = 0;
+        std::tuple<InOutDataType, void *, int64_t> output_buffer;
+        int64_t output_size;
+        uint32_t size_count = 0;
+
+        /* Get the number of output of the target model. */
+        output_num = runtime.GetNumOutput();
+
+        size_count = 0;
+        /*GetOutput loop*/
+        for (i = 0; i < output_num; i++)
+        {
+            
+            /* output_buffer below is tuple, which is { data type, address of output data, number of elements } */
+            output_buffer = runtime.GetOutput(i);
+
+            /*Output Data Size = std::get<2>(output_buffer). */
+            output_size = std::get<2>(output_buffer);
+
+            /*Output Data Type = std::get<0>(output_buffer)*/
+            if (InOutDataType::FLOAT16 == std::get<0>(output_buffer))
+            {
+                /*Output Data = std::get<1>(output_buffer)*/
+                uint16_t *data_ptr = reinterpret_cast<uint16_t *>(std::get<1>(output_buffer));
+                for (int j = 0; j < output_size; j++)
+                {
+                    /*FP16 to FP32 conversion*/
+                    drpai_output_buf[j + size_count] = float16_to_float32(data_ptr[j]);
+                }
+            }
+            else if (InOutDataType::FLOAT32 == std::get<0>(output_buffer))
+            {
+                /*Output Data = std::get<1>(output_buffer)*/
+                float *data_ptr = reinterpret_cast<float *>(std::get<1>(output_buffer));
+                for (int j = 0; j < output_size; j++)
+                {
+                    drpai_output_buf[j + size_count] = data_ptr[j];
+                }
+            }
+            else
+            {
+                std::cerr << "[ERROR] Output data type : not floating point." << std::endl;
+                ret = -1;
+                break;
+            }
+            size_count += output_size;
+
+        }
+    
+        if (ret != 0)
+        {
+            std::cerr << "[ERROR] DRP Inference Not working !!! " << std::endl;
+            break;
+        }
+
+    /* Do post process to get bounding boxes */
+        yolov2_parser(drpai_output_buf);
+        HEAD_COUNT = draw_bounding_box();
+
+        /* Postprocess time end */
+        auto t5 = std::chrono::high_resolution_clock::now();
+
+        auto r_post_proc_time = std::chrono::duration_cast<std::chrono::microseconds>(t5 - t4).count();
+        auto pre_proc_time = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
+
+        POST_PROC_TIME = r_post_proc_time/1000.0;
+        PRE_PROC_TIME = pre_proc_time/1000.0;
+        INF_TIME = inf_duration/1000.0;
+
+        float total_time = float(inf_duration/1000.0) + float(POST_PROC_TIME) + float(pre_proc_time/1000.0);
+        TOTAL_TIME = total_time;
+
+        // Calculate Total FPS
+        FPS=1000/TOTAL_TIME;
+
+        
+        outputfile << PREPROCESS_START_TIME << " " << HEAD_COUNT  << " " << FPS << " " << TOTAL_TIME << " " << INF_TIME << " " << PRE_PROC_TIME << " " << POST_PROC_TIME << "\n";
+        printf ( "Inference FPS: %f \n",  FPS);
+     
+    }
+    // file close
+    outputfile.close();
+}
+

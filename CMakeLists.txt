@@ -13,6 +13,10 @@ set(CMAKE_C_STANDARD_REQUIRED YES)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -fPIC -O0")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -fPIC -O0")
 
+set(TVM_ROOT $ENV{TVM_HOME})
+
+set(TVM_RUNTIME_LIB ${TVM_ROOT}/build_runtime/libtvm_runtime.so)
+
 # List of projects
 #set(PROJECTS v4l2_capture gst_capture cv_capture rzv2l_capture vspm_convert)
 set(PROJECTS app_stream)
@@ -30,6 +34,10 @@ foreach(PROJECT ${PROJECTS})
     # Include directories specific to the current project
     target_include_directories(${PROJECT} PRIVATE ./${PROJECT})
     target_include_directories(${PROJECT} PRIVATE "./common/inc")
+    target_include_directories(${PROJECT} PRIVATE ${TVM_ROOT}/include)
+    target_include_directories(${PROJECT} PRIVATE ${TVM_ROOT}/3rdparty/dlpack/include)
+    target_include_directories(${PROJECT} PRIVATE ${TVM_ROOT}/3rdparty/dmlc-core/include)
+    target_include_directories(${PROJECT} PRIVATE ${TVM_ROOT}/3rdparty/compiler-rt)
     target_include_directories(${PROJECT} PRIVATE $ENV{SDKTARGETSYSROOT}/usr/include)
     target_include_directories(${PROJECT} PRIVATE $ENV{SDKTARGETSYSROOT}/usr/lib64/glib-2.0/include)
     target_include_directories(${PROJECT} PRIVATE $ENV{SDKTARGETSYSROOT}/usr/include/glib-2.0)
@@ -72,5 +80,6 @@ foreach(PROJECT ${PROJECTS})
         mount resolv expat pangoft2-1.0 blkid
         EGL GLESv2
     )
+    target_link_libraries(${PROJECT} PRIVATE ${TVM_RUNTIME_LIB})
 
 endforeach()

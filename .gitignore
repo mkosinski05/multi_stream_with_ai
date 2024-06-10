@@ -54,3 +54,6 @@ build/CMakeFiles/app_stream.dir/cmake_clean.cmake
 build/CMakeFiles/app_stream.dir/C.includecache
 build/CMakeFiles/app_stream.dir/build.make
 build/app_stream
+build/CMakeFiles/app_stream.dir/app_stream/ai_parsers.cpp.o
+build/CMakeFiles/app_stream.dir/app_stream/inf_thread.cpp.o
+build/CMakeFiles/app_stream.dir/app_stream/MeraDrpRuntimeWrapper.cpp.o
