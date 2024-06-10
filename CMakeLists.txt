@@ -15,7 +15,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -fPIC -O0")
 
 # List of projects
 #set(PROJECTS v4l2_capture gst_capture cv_capture rzv2l_capture vspm_convert)
-set(PROJECTS gst_capture2)
+set(PROJECTS app_stream)
 # 
 # Loop over each project
 foreach(PROJECT ${PROJECTS})
