@@ -1,8 +1,57 @@
 
-#include "defines.h"
+#include <queue>
+#include "stream.h"
+#include <opencv2/opencv.hpp>
 
+using namespace cv;
 
-extern volatile sig_atomic_t g_int_signal;
+extern volatile sig_atomic_t g_int_signal; 
+
+static double timedifference_msec(struct timespec t0, struct timespec t1)
+{
+    return (t1.tv_sec - t0.tv_sec) * 1000.0 + (t1.tv_nsec - t0.tv_nsec) / 1000000.0;
+}
+static void convertYUYVtoNV12(const Mat& yuyvImage, Mat& nv12Image) {
+    int width = yuyvImage.cols;
+    int height = yuyvImage.rows;
+
+    // Create Y, U, and V planes
+    Mat yPlane(height, width, CV_8UC1);
+    Mat uPlane(height / 2, width / 2, CV_8UC1);
+    Mat vPlane(height / 2, width / 2, CV_8UC1);
+
+    // Extract Y, U, V from YUYV
+    for (int i = 0; i < height; i++) {
+        for (int j = 0; j < width; j += 2) {
+            int index = i * width + j;
+            uchar y0 = yuyvImage.data[index * 2];
+            uchar u0 = yuyvImage.data[index * 2 + 1];
+            uchar y1 = yuyvImage.data[index * 2 + 2];
+            uchar v0 = yuyvImage.data[index * 2 + 3];
+
+            yPlane.at<uchar>(i, j) = y0;
+            yPlane.at<uchar>(i, j + 1) = y1;
+            if (i % 2 == 0 && j % 2 == 0) {
+                uPlane.at<uchar>(i / 2, j / 2) = u0;
+                vPlane.at<uchar>(i / 2, j / 2) = v0;
+            }
+        }
+    }
+
+    // Create UV interleaved plane
+    Mat uvPlane(height / 2, width, CV_8UC1);
+    for (int i = 0; i < height / 2; i++) {
+        for (int j = 0; j < width / 2; j++) {
+            uvPlane.at<uchar>(i, 2 * j) = uPlane.at<uchar>(i, j);
+            uvPlane.at<uchar>(i, 2 * j + 1) = vPlane.at<uchar>(i, j);
+        }
+    }
+
+    // Combine Y and UV planes into NV12 format
+    nv12Image.create(height + height / 2, width, CV_8UC1);
+    yPlane.copyTo(nv12Image(Rect(0, 0, width, height)));
+    uvPlane.copyTo(nv12Image(Rect(0, height, width, height / 2)));
+}
 
 /********************************** FOR OMX ***********************************/
 
@@ -128,46 +177,84 @@ OMX_ERRORTYPE omx_fill_buffer_done(OMX_HANDLETYPE hComponent,
 
 void * thread_input(void * p_param)
 {
-    in_data_t * p_data = (in_data_t *)p_param;
+    PipelineData *p_pipeline = (PipelineData*)p_param;
+    assert(p_pipeline != NULL);
 
-    /* Check parameter */
+    in_data_t * p_data = (in_data_t*)p_pipeline->in_data;
     assert(p_data != NULL);
-
-    /* true:  The loop is running.
-     * false: The loop just stopped */
-    bool is_running = true;
-
-    /* V4L2 buffer */
-    struct v4l2_buffer cam_buf;
 
     /* Buffer of input port */
     int index = -1;
     OMX_BUFFERHEADERTYPE * p_buf = NULL;
 
-    vspm_tp_cb_info_t *cb_info = NULL;
+    float convert_time = 0.0f;
 
-    /**************************************************************************
-     *             STEP 7: INITIALIZE VSPM ISU             *
-     **************************************************************************/
+    GstBuffer *buffer = NULL;
 
-    assert(isu_init() != NULL);
-    isu_job_t *p_vspm_job = create_job_yuyv_to_nv12 ( FRAME_WIDTH_IN_PIXELS, FRAME_HEIGHT_IN_PIXELS);
-    assert ( p_vspm_job != NULL );
+    // Create Mat objects for Y and UV planes
+    //cv::Mat y_plane(FRAME_HEIGHT_IN_PIXELS, FRAME_WIDTH_IN_PIXELS, CV_8UC1, nv12_array);
+    //cv::Mat uv_plane(FRAME_HEIGHT_IN_PIXELS / 2, FRAME_WIDTH_IN_PIXELS / 2, CV_8UC2, nv12_array + y_plane_size);
 
-    cb_info = (vspm_tp_cb_info_t*)malloc(sizeof(vspm_tp_cb_info_t));
-    assert(cb_info != NULL);
-	memset(cb_info, 0, sizeof( vspm_tp_cb_info_t));
+    // Merge Y and UV planes into a single NV12 Mat
+    //std::vector<cv::Mat> nv12_planes = { y_plane, uv_plane };
+    cv::Mat nv12_image;
+    //cv::vconcat(nv12_planes, nv12_image);
 
-	pthread_mutex_init(&cb_info->mutex, NULL);
-	pthread_cond_init(&cb_info->cond, NULL);
+    GstMapInfo info;
 
-
+ 
     /**************************************************************************
      *                       STEP 7: THREAD'S MAIN LOOP                       *
      **************************************************************************/
 
-    while (is_running)
+    while ( p_pipeline->running)
     {
+        /* Capture Camera image */
+        // Wait for a buffer to be available
+        {
+            std::unique_lock<std::mutex> lock(p_pipeline->queue_mutex);
+            p_pipeline->queue_cond.wait(lock, [&]{ return !p_pipeline->buffer_queue.empty() || !p_pipeline->running; });
+
+            if (!p_pipeline->running) break;
+
+            buffer = p_pipeline->buffer_queue.front();
+            p_pipeline->buffer_queue.pop();
+        }
+        assert(buffer != NULL);
+
+        timespec_get(&p_pipeline->metrics.yuv2nv12_start, TIME_UTC);
+
+
+        if (gst_buffer_map(buffer, &info, GST_MAP_READ)) {
+                   
+            // Copy the capture buffer to the CMA Buffer
+            // Do this because software conversion is slow (> 122mseconds)
+            memcpy((void*)p_pipeline->in_data->p_yuyv_bufs->virt_addr, info.data, YUYV_FRAME_SIZE_IN_BYTES);
+            
+            // Release GST Buffer
+            gst_buffer_unmap(buffer, &info);
+            gst_buffer_unref(buffer);
+        }
+
+        /* Convert the YUYV image to NV12 using OpenCV */
+        cv::Mat yuyv_image( FRAME_HEIGHT_IN_PIXELS, 
+                            FRAME_WIDTH_IN_PIXELS, CV_8UC2, 
+                            (void*)p_pipeline->in_data->p_yuyv_bufs->virt_addr);
+           
+        convertYUYVtoNV12(yuyv_image, nv12_image);
+
+        timespec_get(&p_pipeline->metrics.yuv2nv12_end, TIME_UTC);
+        convert_time = (float)((timedifference_msec(
+                                    p_pipeline->metrics.yuv2nv12_start, 
+                                    p_pipeline->metrics.yuv2nv12_end)));
+
+        printf("YUUV to NV12: %f\n", convert_time);
+
+        
+        
+#if 1
+        /* OMX ENCODE VIDEO STREAM */
+        /* Wait for OMX is ready */
         assert(pthread_mutex_lock(p_data->p_mutex) == 0);
 
         while (queue_is_empty(p_data->p_queue))
@@ -186,33 +273,14 @@ void * thread_input(void * p_param)
 
         assert(pthread_mutex_unlock(p_data->p_mutex) == 0);
 
-        /* Get buffer's index */
+        /* Get OMX buffer's index */
         index = omx_get_index(p_buf, p_data->pp_bufs, NV12_BUFFER_COUNT);
         assert(index != -1);
 
-        /* Receive camera's buffer */
-        assert(v4l2_dequeue_buf(p_data->cam_fd, &cam_buf));
+        // Copy OpenCV Nuffer to OMX buffer
+        memcpy((void*)p_data->p_nv12_bufs[index].virt_addr, nv12_image.data, NV12_FRAME_SIZE_IN_BYTES);
 
-        //paddr = (void *)(uintptr_t)p_data->p_nv12_bufs[index].virt_addr;
-        //memcpy ( paddr, p_data->p_yuyv_bufs[cam_buf.index].p_virt_addr, p_data->p_nv12_bufs->size);
-        
-        assert (start_job( p_vspm_job, 
-            (void*)p_data->p_yuyv_bufs[cam_buf.index].hard_addr, 
-            (void *)(uintptr_t)p_data->p_nv12_bufs[index].hard_addr, 
-            vspm_isu_callback, cb_info ) != -1);
-
-        /* VSPM Job wait callback */
-        pthread_mutex_lock(&cb_info->mutex);
-        pthread_cond_wait(&cb_info->cond, &cb_info->mutex);
-        pthread_mutex_unlock(&cb_info->mutex);
-
-        /* check callback information */
-        assert ((cb_info->ercd != 0) || (cb_info->job_id != p_vspm_job->job_id));
-            
-
-        /* Reuse camera's buffer */
-        assert(v4l2_enqueue_buf(p_data->cam_fd, cam_buf.index));
-
+        /* Copy the NV12 image to the OMX buffer */ 
         /* If 'p_buf' contains data, 'nFilledLen' must not be zero */
         p_buf->nFilledLen = NV12_FRAME_SIZE_IN_BYTES;
 
@@ -224,11 +292,12 @@ void * thread_input(void * p_param)
             p_buf->nFlags |= OMX_BUFFERFLAG_EOS;
 
             /* Exit loop */
-            is_running = false;
+            p_pipeline->running = false;
         }
 
         /* Send the buffer to the input port of the component */
         assert(OMX_EmptyThisBuffer(p_data->handle, p_buf) == OMX_ErrorNone);
+#endif
     }
 
     printf("Thread '%s' exited\n", __FUNCTION__);
@@ -237,26 +306,24 @@ void * thread_input(void * p_param)
 
 void * thread_output(void * p_param)
 {
-    out_data_t * p_data = (out_data_t *)p_param;
+    PipelineData *p_pipeline = (PipelineData*)p_param;
+    assert(p_pipeline != NULL);
 
-    /* true:  The loop is running.
-     * false: The loop just stopped */
-    bool is_running = true;
+    out_data_t * p_data = (out_data_t *)p_pipeline->out_data;
+    assert(p_data != NULL);
 
     /* Buffer of output port */
     OMX_BUFFERHEADERTYPE * p_buf = NULL;
-
-    /* File for writing H.264 data */
-    FILE * p_h264_fd = NULL;
 
     /* Check parameter */
     assert(p_data != NULL);
 
     /* Open file */
-    p_h264_fd = fopen(H264_FILE_NAME, "w");
-    assert(p_h264_fd != NULL);
+    p_pipeline->p_h264_fd = fopen( p_pipeline->out_filename.c_str(), "w");
+    assert(p_pipeline->p_h264_fd != NULL);
 
-    while (is_running)
+
+    while (p_pipeline->running)
     {
         assert(pthread_mutex_lock(p_data->p_mutex) == 0);
 
@@ -277,12 +344,12 @@ void * thread_output(void * p_param)
         assert(pthread_mutex_unlock(p_data->p_mutex) == 0);
 
         /* Write H.264 data to a file */
-        fwrite((char *)(p_buf->pBuffer), 1, p_buf->nFilledLen, p_h264_fd);
+        fwrite((char *)(p_buf->pBuffer), 1, p_buf->nFilledLen, p_pipeline->p_h264_fd);
 
         if (p_buf->nFlags & OMX_BUFFERFLAG_EOS)
         {
             /* Exit loop */
-            is_running = false;
+            p_pipeline->running = 0;
         }
         else
         {
@@ -295,21 +362,9 @@ void * thread_output(void * p_param)
     }
 
     /* Close file */
-    fclose(p_h264_fd);
+    fclose(p_pipeline->p_h264_fd);
 
     printf("Thread '%s' exited\n", __FUNCTION__);
     return NULL;
 }
 
-/************************ VSPM IF ISU ******************************************/
-void vspm_isu_callback ( unsigned long job_id, long result, void *user_data )
-{
-    vspm_tp_cb_info_t *cb_info =
-		(vspm_tp_cb_info_t *)user_data;
-
-	pthread_mutex_lock(&cb_info->mutex);
-	cb_info->job_id = job_id;
-	cb_info->ercd = result;
-	pthread_cond_signal(&cb_info->cond);
-	pthread_mutex_unlock(&cb_info->mutex);
-}
