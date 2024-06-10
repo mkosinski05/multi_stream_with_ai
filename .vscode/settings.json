@@ -4,11 +4,8 @@
 		"TARGET_IP":"10.42.0.11",
 
 		/* Project Settings */
-		"APPDIR_V4L":"v4l2_capture",
-		"APPDIR_GST":"gst_capture2",
-		"APPDIR_CV" :"cv_capture",
-		"APPDIR_VSP":"vspm_convert",
-		"APPDIR_RZV2L":"rzv2l_capture",
+		"APPDIR_GST":"app_stream",
+		
 
         "BOARD":"rzv2h",
 		/* Yocto SDK Configuration */

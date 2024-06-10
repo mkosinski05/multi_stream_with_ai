@@ -18,27 +18,6 @@
     "tasks": [
         /* Configure launch.json (debug) preLaunchTask Task */
         {
-            "label": "var-deploy-gdb_v4l",
-            "isBackground": true,
-            "problemMatcher":{
-                "base": "$gcc",
-                "background": {
-                    "activeOnStart": true,
-                    "beginsPattern":  "Deploying to target",
-                    "endsPattern":  "Starting GDB Server on Target"
-                }
-            },
-            "type": "shell",
-            "command": "sh",
-            "args": [
-                "var-deploy-gdb.sh",
-                "${config:VARISCITE.TARGET_IP}",
-                "${config:VARISCITE.APPDIR_V4L}",
-                "${config:VARISCITE.APPDIR_V4L}"
-            ],
-            /*"dependsOn": ["build"],*/
-        },
-        {
             "label": "var-deploy-gdb_gst",
             "isBackground": true,
             "problemMatcher":{
@@ -56,69 +35,6 @@
                 "${config:VARISCITE.TARGET_IP}",
                 "${config:VARISCITE.APPDIR_GST}",
                 "${config:VARISCITE.APPDIR_GST}"
-            ],
-            /*"dependsOn": ["build"],*/
-        },
-        {
-            "label": "var-deploy-gdb_cv",
-            "isBackground": true,
-            "problemMatcher":{
-                "base": "$gcc",
-                "background": {
-                    "activeOnStart": true,
-                    "beginsPattern":  "Deploying to target",
-                    "endsPattern":  "Starting GDB Server on Target"
-                }
-            },
-            "type": "shell",
-            "command": "sh",
-            "args": [
-                "var-deploy-gdb.sh",
-                "${config:VARISCITE.TARGET_IP}",
-                "${config:VARISCITE.APPDIR_CV}",
-                "${config:VARISCITE.APPDIR_CV}"
-            ],
-            /*"dependsOn": ["build"],*/
-        },
-        {
-            "label": "var-deploy-gdb_vsp",
-            "isBackground": true,
-            "problemMatcher":{
-                "base": "$gcc",
-                "background": {
-                    "activeOnStart": true,
-                    "beginsPattern":  "Deploying to target",
-                    "endsPattern":  "Starting GDB Server on Target"
-                }
-            },
-            "type": "shell",
-            "command": "sh",
-            "args": [
-                "var-deploy-gdb.sh",
-                "${config:VARISCITE.TARGET_IP}",
-                "${config:VARISCITE.APPDIR_VSP}",
-                "${config:VARISCITE.APPDIR_VSP}"
-            ],
-            /*"dependsOn": ["build"],*/
-        },
-        {
-            "label": "var-deploy-gdb_rzv2l",
-            "isBackground": true,
-            "problemMatcher":{
-                "base": "$gcc",
-                "background": {
-                    "activeOnStart": true,
-                    "beginsPattern":  "Deploying to target",
-                    "endsPattern":  "Starting GDB Server on Target"
-                }
-            },
-            "type": "shell",
-            "command": "sh",
-            "args": [
-                "var-deploy-gdb.sh",
-                "${config:VARISCITE.TARGET_IP}",
-                "${config:VARISCITE.APPDIR_RZV2L}",
-                "${config:VARISCITE.APPDIR_RZV2L}"
             ],
             /*"dependsOn": ["build"],*/
         },
