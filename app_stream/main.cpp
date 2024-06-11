@@ -128,7 +128,7 @@ void* pipeline_thread(void* arg) {
         g_printerr("Failed to create processing thread for pipeline %s.\n", data->pipeline_name);
         return NULL;
     }
-5
+
     data->in_data = &in_data;
     /* Set Unique output filename for each gst pipline */
     data->out_filename = "out_h265_" + std::to_string(data->setup_thread_id) + ".264";
