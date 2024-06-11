@@ -3,6 +3,7 @@
 * includes
 ******************************************/
 #include "MeraDrpRuntimeWrapper.h"
+#include "PreRuntime.h"
 #include <linux/drpai.h>
 #include <linux/input.h>
 #include <builtin_fp16.h>
@@ -12,6 +13,7 @@
 #include<iostream>
 #include<fstream>
 
+#include "stream.h"
 #include "inference.h"
 
 using namespace std;
@@ -162,24 +164,18 @@ vector<string> load_label_file(string label_file_name)
 
 void * thread_infer(void * p_param) 
 {
+    int ret = 0;
+    PipelineData *p_pipeline = (PipelineData*)p_param;
+    assert(p_pipeline != NULL);
 
-    inf_data_t * p_data = (inf_data_t *)p_param;
+    inf_data_t * p_data = (inf_data_t *)p_pipeline->inf_data;
+    assert(p_data != NULL);
 
-    /* V4L2 buffer */
-    //struct v4l2_buffer cam_buf;
-
-    /* true:  The loop is running.
-     * false: The loop just stopped */
-    bool is_running = true;
-
-    bool runtime_status = false;
-
+    
     /* DRP-AI TVM[*1] Runtime object */
     MeraDrpRuntimeWrapper runtime;
-
-    /* Temp frame */
-    Mat frame1;
-    Mat g_frame;
+    /* Pre-processing Runtime object */
+    PreRuntime preruntime;
 
     float FPS = 0;
     long long PREPROCESS_START_TIME = 0;
@@ -190,6 +186,12 @@ void * thread_infer(void * p_param)
     float POST_PROC_TIME = 0;
     float PRE_PROC_TIME = 0;
     int32_t HEAD_COUNT= 0;
+
+    GstMapInfo info;
+
+    /* Output variables for Pre-processing Runtime */
+    void *output_ptr;
+    uint32_t out_size;
 
     Size size(MODEL_IN_H, MODEL_IN_W);
 
@@ -204,14 +206,15 @@ void * thread_infer(void * p_param)
 
     assert (drpaimem_addr_start != 0);
 
+    /*Load pre_dir object to DRP-AI */
+    assert(preruntime.Load(pre_dir));
 
     /*Load model_dir structure and its weight to runtime object */
-    runtime_status = runtime.LoadModel(model_dir, drpaimem_addr_start + DRPAI_MEM_OFFSET);
-    assert(runtime_status);
+    assert(runtime.LoadModel(model_dir, drpaimem_addr_start + DRPAI_MEM_OFFSET));
 
     ofstream outputfile("ai_output.txt", ios::app);
     
-     while (is_running)
+     while (p_pipeline->running)
     {
         /* Receive camera's buffer */
         //assert(v4l2_dequeue_buf(p_data->cam_fd, &cam_buf));
@@ -228,8 +231,8 @@ void * thread_infer(void * p_param)
             PREPROCESS_START_TIME = tp_msec.count();
         //    PREPROCESS_START_TIME = std::chrono::system_clock::to_time_t(t0);;
         //    PREPROCESS_START_TIME = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());;
-
-        //g_frame = Mat(size, CV_8UC3, p_data->p_yuyv_bufs[cam_buf.index].virt_addr );
+#if 0
+        g_frame = Mat(size, CV_8UC3, p_data->p_yuyv_bufs[cam_buf.index].virt_addr );
 
 
         /*resize the image to the model input size*/
@@ -260,12 +263,48 @@ void * thread_infer(void * p_param)
         /* Preprocess time ends*/
         auto t1 = std::chrono::high_resolution_clock::now();
 
+        /*start inference using drp runtime*/
+        runtime.SetInput(0, frame.ptr<float>());
+#else
+        GstBuffer *buffer = NULL;
+
+        // Wait for a buffer to be available
+        {
+            std::unique_lock<std::mutex> lock(p_pipeline->queue_mutex);
+            p_pipeline->queue_cond.wait(lock, [&]{ return !p_pipeline->buffer_queue.empty() || !p_pipeline->running; });
+
+            if (!p_pipeline->running) break;
+
+            buffer = p_pipeline->buffer_queue.front();
+            p_pipeline->buffer_queue.pop();
+        }
+
+        gst_buffer_map(buffer, &info, GST_MAP_READ);
+
+        s_preproc_param_t in_param;
+        in_param.pre_in_addr    = (uint64_t)info.data;
+
+        
+        /*Run pre-processing*/
+        //ret = preruntime.Pre(&output_ptr, &out_size, img_buffer);
+
+        if (0 < preruntime.Pre(&in_param, &output_ptr, &out_size))
+        {
+            std::cerr << "[ERROR] Failed to run Pre-processing Runtime Pre()." << std::endl;
+            return 0;
+        }
+
+        /* Preprocess time ends*/
+        auto t1 = std::chrono::high_resolution_clock::now();
+
+        /*start inference using drp runtime*/
+        runtime.SetInput(0, (float*)output_ptr);
+#endif
         /**********************************************************************
          *      DRP-AI TVM Runtime inference
         ***********************************************************************/
 
-        /*start inference using drp runtime*/
-        runtime.SetInput(0, frame.ptr<float>());
+        
 
         /* Inference time start */
         auto t2 = std::chrono::high_resolution_clock::now();

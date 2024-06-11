@@ -67,54 +67,6 @@ static double timedifference_msec(struct timespec t0, struct timespec t1)
 {
     return (t1.tv_sec - t0.tv_sec) * 1000.0 + (t1.tv_nsec - t0.tv_nsec) / 1000000.0;
 }
-// Function to process image data with OpenCV
-void process_image_data(guint8 *data, gsize size) {
-    // Assuming the data is in RGB format and has known width and height
-    int width = 640;  // replace with actual width
-    int height = 480; // replace with actual height
-#if 0
-    // Create an OpenCV Mat from the buffer data
-    cv::Mat img(cv::Size(width, height), CV_8UC3, data);
-
-    // Process the image using OpenCV
-    cv::Mat processed_img;
-    cv::cvtColor(img, processed_img, cv::COLOR_RGB2BGR); // Example processing
-
-    // Display the processed image
-    cv::imshow("Processed Image", processed_img);
-    cv::waitKey(1);
-#endif
-}
-
-// Thread function for processing the queue
-void* processing_thread(void* arg) {
-    PipelineData* data = (PipelineData*) arg;
-    while (data->running) {
-        GstBuffer *buffer = NULL;
-
-        // Wait for a buffer to be available
-        {
-            std::unique_lock<std::mutex> lock(data->queue_mutex);
-            data->queue_cond.wait(lock, [&]{ return !data->buffer_queue.empty() || !data->running; });
-
-            if (!data->running) break;
-
-            buffer = data->buffer_queue.front();
-            data->buffer_queue.pop();
-        }
-
-        if (buffer) {
-            GstMapInfo info;
-            if (gst_buffer_map(buffer, &info, GST_MAP_READ)) {
-                // Process image data using OpenCV
-                process_image_data(info.data, info.size);
-                gst_buffer_unmap(buffer, &info);
-            }
-            gst_buffer_unref(buffer);
-        }
-    }
-    return NULL;
-}
 
 // Callback function for new samples
 static GstFlowReturn new_sample_callback(GstAppSink *appsink, gpointer user_data) {
@@ -139,7 +91,7 @@ static GstFlowReturn new_sample_callback(GstAppSink *appsink, gpointer user_data
                 std::lock_guard<std::mutex> lock(data->queue_mutex);
                 data->buffer_queue.push(buffer);
             }
-            data->queue_cond.notify_one();
+            data->queue_cond.notify_all();
         }
         gst_sample_unref(sample);
     }
@@ -176,7 +128,7 @@ void* pipeline_thread(void* arg) {
         g_printerr("Failed to create processing thread for pipeline %s.\n", data->pipeline_name);
         return NULL;
     }
-#if 1
+5
     data->in_data = &in_data;
     /* Set Unique output filename for each gst pipline */
     data->out_filename = "out_h265_" + std::to_string(data->setup_thread_id) + ".264";
@@ -185,7 +137,7 @@ void* pipeline_thread(void* arg) {
         g_printerr("Failed to create processing thread for pipeline %s.\n", data->pipeline_name);
         return NULL;
     }
-#endif
+
     // Create and run the main loop for this pipeline
     data->main_loop = g_main_loop_new(NULL, FALSE);
     g_main_loop_run(data->main_loop);

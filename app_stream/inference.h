@@ -52,12 +52,6 @@
 #include "mmngr.h"
 #include "queue.h"
 
-typedef struct _inf_data_t {
-
-
-    /* YUYV buffers */
-    mmngr_buf_t * p_yuyv_bufs;
-} inf_data_t;
 
 /*****************************************
 * Static Variables for YOLOv3

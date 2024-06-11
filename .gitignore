@@ -57,3 +57,5 @@ build/app_stream
 build/CMakeFiles/app_stream.dir/app_stream/ai_parsers.cpp.o
 build/CMakeFiles/app_stream.dir/app_stream/inf_thread.cpp.o
 build/CMakeFiles/app_stream.dir/app_stream/MeraDrpRuntimeWrapper.cpp.o
+/.metadata/
+build/CMakeFiles/app_stream.dir/app_stream/PreRuntime.cpp.o

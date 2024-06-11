@@ -240,9 +240,9 @@ void * thread_input(void * p_param)
         cv::Mat yuyv_image( FRAME_HEIGHT_IN_PIXELS, 
                             FRAME_WIDTH_IN_PIXELS, CV_8UC2, 
                             (void*)p_pipeline->in_data->p_yuyv_bufs->virt_addr);
-           
+#if 0 
         convertYUYVtoNV12(yuyv_image, nv12_image);
-
+#endif
         timespec_get(&p_pipeline->metrics.yuv2nv12_end, TIME_UTC);
         convert_time = (float)((timedifference_msec(
                                     p_pipeline->metrics.yuv2nv12_start, 
@@ -252,7 +252,7 @@ void * thread_input(void * p_param)
 
         
         
-#if 1
+#if 0
         /* OMX ENCODE VIDEO STREAM */
         /* Wait for OMX is ready */
         assert(pthread_mutex_lock(p_data->p_mutex) == 0);

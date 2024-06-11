@@ -195,11 +195,10 @@ typedef struct
 } out_data_t;
 
 typedef struct _inf_data_t {
-    /* Camera */
-    int cam_fd;
+
 
     /* YUYV buffers */
-    v4l2_udmabuf_exp_t * p_yuyv_bufs;
+    mmngr_buf_t * p_yuyv_bufs;
 } inf_data_t;
 
 /********************************** GSTREAMER PIPLINE *****************************************/
@@ -222,6 +221,7 @@ typedef struct {
     /* OMX Decode */
     in_data_t *in_data;
     out_data_t *out_data;
+    inf_data_t *inf_data;
 
     FILE * p_h264_fd;
     std::string out_filename;
