@@ -207,10 +207,15 @@ void * thread_infer(void * p_param)
     assert (drpaimem_addr_start != 0);
 
     /*Load pre_dir object to DRP-AI */
-    assert(preruntime.Load(pre_dir));
+    ret = preruntime.Load(pre_dir);
+    if (0 < ret)
+    {
+        std::cerr << "[ERROR] Failed to run Pre-processing Runtime Load()." << std::endl;
+        return 0;
+    }
 
     /*Load model_dir structure and its weight to runtime object */
-    assert(runtime.LoadModel(model_dir, drpaimem_addr_start + DRPAI_MEM_OFFSET));
+    runtime.LoadModel(model_dir, drpaimem_addr_start + DRPAI_MEM_OFFSET);
 
     ofstream outputfile("ai_output.txt", ios::app);
     
@@ -284,15 +289,15 @@ void * thread_infer(void * p_param)
         s_preproc_param_t in_param;
         in_param.pre_in_addr    = (uint64_t)info.data;
 
-        
         /*Run pre-processing*/
-        //ret = preruntime.Pre(&output_ptr, &out_size, img_buffer);
-
         if (0 < preruntime.Pre(&in_param, &output_ptr, &out_size))
         {
             std::cerr << "[ERROR] Failed to run Pre-processing Runtime Pre()." << std::endl;
             return 0;
         }
+        // Release GST Buffer
+        gst_buffer_unmap(buffer, &info);
+        gst_buffer_unref(buffer);
 
         /* Preprocess time ends*/
         auto t1 = std::chrono::high_resolution_clock::now();
@@ -395,7 +400,7 @@ void * thread_infer(void * p_param)
 
         
         outputfile << PREPROCESS_START_TIME << " " << HEAD_COUNT  << " " << FPS << " " << TOTAL_TIME << " " << INF_TIME << " " << PRE_PROC_TIME << " " << POST_PROC_TIME << "\n";
-        printf ( "Inference FPS: %f \n",  FPS);
+        printf ( "ID: %X,\tInference FPS: %f \n",  p_pipeline->thread_id, FPS);
      
     }
     // file close

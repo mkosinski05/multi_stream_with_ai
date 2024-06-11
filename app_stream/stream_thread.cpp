@@ -136,7 +136,7 @@ OMX_ERRORTYPE omx_empty_buffer_done(OMX_HANDLETYPE hComponent,
         assert(pthread_mutex_unlock(p_data->p_mut_in) == 0);
     }
 
-    printf("EmptyBufferDone exited\n");
+    //printf("EmptyBufferDone exited\n");
     return OMX_ErrorNone;
 }
 
@@ -169,7 +169,7 @@ OMX_ERRORTYPE omx_fill_buffer_done(OMX_HANDLETYPE hComponent,
         assert(pthread_mutex_unlock(p_data->p_mut_out) == 0);
     }
 
-    printf("FillBufferDone exited\n");
+    //printf("FillBufferDone exited\n");
     return OMX_ErrorNone;
 }
 
@@ -240,7 +240,7 @@ void * thread_input(void * p_param)
         cv::Mat yuyv_image( FRAME_HEIGHT_IN_PIXELS, 
                             FRAME_WIDTH_IN_PIXELS, CV_8UC2, 
                             (void*)p_pipeline->in_data->p_yuyv_bufs->virt_addr);
-#if 0 
+#if 1
         convertYUYVtoNV12(yuyv_image, nv12_image);
 #endif
         timespec_get(&p_pipeline->metrics.yuv2nv12_end, TIME_UTC);
@@ -248,11 +248,11 @@ void * thread_input(void * p_param)
                                     p_pipeline->metrics.yuv2nv12_start, 
                                     p_pipeline->metrics.yuv2nv12_end)));
 
-        printf("YUUV to NV12: %f\n", convert_time);
+        printf("ID: %X,\tYUUV to NV12: %f\n", p_pipeline->thread_id,convert_time);
 
         
         
-#if 0
+#if 1
         /* OMX ENCODE VIDEO STREAM */
         /* Wait for OMX is ready */
         assert(pthread_mutex_lock(p_data->p_mutex) == 0);

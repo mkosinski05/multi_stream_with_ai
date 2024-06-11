@@ -62,9 +62,9 @@
 ******************************************/
 /* Model Binary */
 //const static std::string model_dir = "head_count_yolov3";
-const static std::string model_dir = "yolov2_cam";
+const static std::string model_dir = "/home/root/app_stream/yolov2_cam";
 /* Pre-processing Runtime Object */
-const static std::string pre_dir = model_dir + "yolov2_cam/preprocess";
+const static std::string pre_dir = model_dir + "/preprocess";
 
 /* Label list file */
 const static std::string label_list = "labels.txt";

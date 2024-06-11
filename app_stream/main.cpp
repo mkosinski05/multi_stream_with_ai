@@ -41,7 +41,8 @@ out_data_t out_data;
 
 
 void * thread_input(void * p_param);
-void * thread_output(void * p_param);  
+void * thread_output(void * p_param); 
+void * thread_infer(void * p_param); 
 
 /* Mutexes for condition variables */
 pthread_mutex_t mut_in;
@@ -50,6 +51,8 @@ pthread_mutex_t mut_out;
 /* Condition variables */
 pthread_cond_t cond_in_available;
 pthread_cond_t cond_out_available;
+
+bool g_infThreadIsCreated = false;
 
 volatile sig_atomic_t g_int_signal = 0;
 
@@ -81,7 +84,7 @@ static GstFlowReturn new_sample_callback(GstAppSink *appsink, gpointer user_data
         timespec_get(&data->end_time, TIME_UTC);
         cap_time = (float)((timedifference_msec(data->start_time, data->end_time)));
         timespec_get(&data->start_time, TIME_UTC);
-        g_print("Capture : %f\n", cap_time);
+        g_print("ID: %X,\tCapture : %f\n", data->thread_id, cap_time);
 
         if (buffer) {
             gst_buffer_ref(buffer);  // Increment ref count to ensure buffer is valid during processing
@@ -121,6 +124,14 @@ void* pipeline_thread(void* arg) {
     pthread_t thread_out_id;
     pthread_t thread_inf_id;
 
+    if ( !g_infThreadIsCreated ) {
+        if (pthread_create(&thread_inf_id, NULL, thread_infer, data) != 0) {
+            g_printerr("Failed to create processing thread for pipeline %s.\n", data->pipeline_name);
+            return NULL;
+        }
+        g_infThreadIsCreated = true;
+    }
+#if 1
     // Start processing thread
     data->in_data = &in_data;
     data->out_data = &out_data;
@@ -137,6 +148,7 @@ void* pipeline_thread(void* arg) {
         g_printerr("Failed to create processing thread for pipeline %s.\n", data->pipeline_name);
         return NULL;
     }
+#endif
 
     // Create and run the main loop for this pipeline
     data->main_loop = g_main_loop_new(NULL, FALSE);
