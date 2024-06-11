@@ -59,6 +59,18 @@ volatile sig_atomic_t g_int_signal = 0;
 
 void sigint_handler(int signum, siginfo_t * p_info, void * p_ptr);
 
+struct itimerval timer;
+
+void timer_handler(int signum) {
+    /* 10 second Timer */
+    printf("Timer expired\n");
+
+    // Reset Stream 0 File 
+    // Reset Stream 1 File
+    // Reset Inference File
+
+}
+
 /*****************************************
 * Function Name : timedifference_msec
 * Description   : compute the time differences in ms between two moments
@@ -172,6 +184,9 @@ void* pipeline_thread(void* arg) {
 
 int main(int argc, char *argv[]) {
 
+    struct sigaction sa;
+    struct itimerval timer;
+
     /* Interrupt signal */
     struct sigaction sig_act;
 
@@ -195,6 +210,15 @@ int main(int argc, char *argv[]) {
     /* Buffers for input and output ports */
     OMX_BUFFERHEADERTYPE ** pp_in_bufs  = NULL;
     OMX_BUFFERHEADERTYPE ** pp_out_bufs = NULL;
+
+    // Install the timer_handler as the signal handler for SIGALRM
+    sa.sa_handler = &timer_handler;
+    sa.sa_flags = SA_RESTART;
+    sigaction(SIGALRM, &sa, NULL);
+
+    // Configure the timer to expire after 10 seconds
+    timer.it_value.tv_sec = 10;
+    timer.it_value.tv_usec = 0;
 
     /**************************************************************************
      *                STEP 1: SET UP INTERRUPT SIGNAL HANDLER                 *
@@ -400,6 +424,8 @@ int main(int argc, char *argv[]) {
         i++;
     }
 
+    // Start the timer
+    setitimer(ITIMER_REAL, &timer, NULL);
     
     for (int i = 0; i < NUM_PIPELINES; i++) {
         pthread_join(pipelines[i].thread_id, NULL);
@@ -407,6 +433,10 @@ int main(int argc, char *argv[]) {
         
     }
     
+    // Configure the timer to not repeat (set to zero)
+    timer.it_interval.tv_sec = 0;
+    timer.it_interval.tv_usec = 0;
+
     /**************************************************************************
      *                          STEP 16: CLEAN UP OMX                         *
      **************************************************************************/
