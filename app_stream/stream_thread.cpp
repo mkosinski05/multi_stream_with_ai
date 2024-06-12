@@ -231,9 +231,15 @@ void * thread_input(void * p_param)
             // Do this because software conversion is slow (> 122mseconds)
             memcpy((void*)p_pipeline->in_data->p_yuyv_bufs->virt_addr, info.data, YUYV_FRAME_SIZE_IN_BYTES);
             
+            
             // Release GST Buffer
             gst_buffer_unmap(buffer, &info);
             gst_buffer_unref(buffer);
+#if 0
+            FILE * fp = fopen("out.yuyv", "wb");
+            fwrite((void*)p_pipeline->in_data->p_yuyv_bufs->virt_addr, 1, YUYV_FRAME_SIZE_IN_BYTES, fp);
+            fclose(fp);
+#endif
         }
 
         /* Convert the YUYV image to NV12 using OpenCV */
@@ -278,7 +284,13 @@ void * thread_input(void * p_param)
         assert(index != -1);
 
         // Copy OpenCV Nuffer to OMX buffer
+    #if 0
         memcpy((void*)p_data->p_nv12_bufs[index].virt_addr, nv12_image.data, NV12_FRAME_SIZE_IN_BYTES);
+        FILE * fp = fopen("out.yuv", "wb");
+        fwrite((void*)p_pipeline->in_data->p_yuyv_bufs->virt_addr, 1, YUYV_FRAME_SIZE_IN_BYTES, fp);
+        fclose(fp);
+    #endif
+        
 
         /* Copy the NV12 image to the OMX buffer */ 
         /* If 'p_buf' contains data, 'nFilledLen' must not be zero */
@@ -319,7 +331,7 @@ void * thread_output(void * p_param)
     assert(p_data != NULL);
 
     /* Open file */
-    p_pipeline->p_h264_fd = fopen( p_pipeline->out_filename.c_str(), "w");
+    p_pipeline->p_h264_fd = fopen( p_pipeline->out_filename.c_str(), "wb");
     assert(p_pipeline->p_h264_fd != NULL);
 
 

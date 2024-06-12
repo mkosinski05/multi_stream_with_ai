@@ -24,9 +24,6 @@
 
 #define NUM_PIPELINES 2
 
-#define CAMERA_WIDTH    1920
-#define CAMERA_HEIGHT   1080
-
 
 /* Shared data between OMX's callbacks */
 omx_data_t omx_data;
@@ -135,7 +132,7 @@ void* pipeline_thread(void* arg) {
     pthread_t thread_in_id;
     pthread_t thread_out_id;
     pthread_t thread_inf_id;
-
+#if 1
     if ( !g_infThreadIsCreated ) {
         if (pthread_create(&thread_inf_id, NULL, thread_infer, data) != 0) {
             g_printerr("Failed to create processing thread for pipeline %s.\n", data->pipeline_name);
@@ -143,6 +140,7 @@ void* pipeline_thread(void* arg) {
         }
         g_infThreadIsCreated = true;
     }
+#endif
 #if 1
     // Start processing thread
     data->in_data = &in_data;
@@ -211,25 +209,23 @@ int main(int argc, char *argv[]) {
     OMX_BUFFERHEADERTYPE ** pp_in_bufs  = NULL;
     OMX_BUFFERHEADERTYPE ** pp_out_bufs = NULL;
 
-    // Install the timer_handler as the signal handler for SIGALRM
-    sa.sa_handler = &timer_handler;
-    sa.sa_flags = SA_RESTART;
-    sigaction(SIGALRM, &sa, NULL);
-
-    // Configure the timer to expire after 10 seconds
-    timer.it_value.tv_sec = 10;
-    timer.it_value.tv_usec = 0;
-
+ 
     /**************************************************************************
      *                STEP 1: SET UP INTERRUPT SIGNAL HANDLER                 *
      **************************************************************************/
 
+    sig_act.sa_handler = &timer_handler;
     sig_act.sa_sigaction = sigint_handler;
     sig_act.sa_flags     = SA_SIGINFO | SA_RESTART;
 
     sigaction(SIGINT,  &sig_act, NULL);
     sigaction(SIGTERM, &sig_act, NULL);
     sigaction(SIGQUIT, &sig_act, NULL);
+    sigaction(SIGALRM, &sig_act, NULL);
+
+    // Configure the timer to expire after 10 seconds
+    timer.it_value.tv_sec = 10;
+    timer.it_value.tv_usec = 0;
 
     /**************************************************************************
      *               STEP 4: USE MMNGR TO ALLOCATE NV12 BUFFERS               *
@@ -367,8 +363,8 @@ int main(int argc, char *argv[]) {
 
     PipelineData pipelines[NUM_PIPELINES];
     gchar* pipeline_str[NUM_PIPELINES] = {
-        "v4l2src device=/dev/video0 ! videoconvert ! appsink name=sink0",
-        "v4l2src device=/dev/video1 ! videoconvert ! appsink name=sink1"
+        "v4l2src device=/dev/video0 ! video/x-raw, width=1920, height=1080 ! appsink name=sink0",
+        "v4l2src device=/dev/video1 ! video/x-raw, width=1280, height=720 ! appsink name=sink1"
     };
 
      /**************************************************************************
@@ -381,11 +377,11 @@ int main(int argc, char *argv[]) {
  *                          LOOP THROUGH EACH CAMERA     
      **************************************************************************/
     for ( auto& camera : cameras) { 
-
+    //for (int i = 0; i < NUM_PIPELINES; i++) {
         /**************************************************************************
  *                          Initialize Media      
         **************************************************************************/
-        media_init( &camera, CAMERA_WIDTH, CAMERA_HEIGHT);
+        media_init( &camera, FRAME_WIDTH_IN_PIXELS, FRAME_HEIGHT_IN_PIXELS);
         
         pipelines[i].pipeline = gst_parse_launch(pipeline_str[i], NULL);
         if (!pipelines[i].pipeline) {
@@ -422,6 +418,7 @@ int main(int argc, char *argv[]) {
             return -1;
         }
         i++;
+        break;
     }
 
     // Start the timer

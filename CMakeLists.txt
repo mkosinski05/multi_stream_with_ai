@@ -13,12 +13,14 @@ set(CMAKE_C_STANDARD_REQUIRED YES)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -fPIC -O0")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -fPIC -O0")
 
+if(TVM_ENABLE)
 set(TVM_ROOT $ENV{TVM_HOME})
 
 set(TVM_RUNTIME_LIB ${TVM_ROOT}/build_runtime/libtvm_runtime.so)
+endif()
 
 # List of projects
-#set(PROJECTS v4l2_capture gst_capture cv_capture rzv2l_capture vspm_convert)
+#set(PROJECTS v4l2_capture gst_capture cv_capture rzv2l_capture vspm_convert, app_stream)
 set(PROJECTS app_stream)
 # 
 # Loop over each project
@@ -34,10 +36,12 @@ foreach(PROJECT ${PROJECTS})
     # Include directories specific to the current project
     target_include_directories(${PROJECT} PRIVATE ./${PROJECT})
     target_include_directories(${PROJECT} PRIVATE "./common/inc")
+if(TVM_ENABLE)
     target_include_directories(${PROJECT} PRIVATE ${TVM_ROOT}/include)
     target_include_directories(${PROJECT} PRIVATE ${TVM_ROOT}/3rdparty/dlpack/include)
     target_include_directories(${PROJECT} PRIVATE ${TVM_ROOT}/3rdparty/dmlc-core/include)
     target_include_directories(${PROJECT} PRIVATE ${TVM_ROOT}/3rdparty/compiler-rt)
+endif()
     target_include_directories(${PROJECT} PRIVATE $ENV{SDKTARGETSYSROOT}/usr/include)
     target_include_directories(${PROJECT} PRIVATE $ENV{SDKTARGETSYSROOT}/usr/lib64/glib-2.0/include)
     target_include_directories(${PROJECT} PRIVATE $ENV{SDKTARGETSYSROOT}/usr/include/glib-2.0)
@@ -58,12 +62,6 @@ foreach(PROJECT ${PROJECTS})
     pkg_check_modules(GST REQUIRED gstreamer-1.0)
     pkg_check_modules(GST_APP REQUIRED gstreamer-app-1.0)
 
-    # Include GStreamer headers
-    #include_directories(${PROJECT} PRIVATE ${GST_INCLUDE_DIRS})
-    #include_directories(${PROJECT} PRIVATE ${GST_APP_INCLUDE_DIRS})
-    #message(STATUS ${GST_INCLUDE_DIRS})
-    #message(STATUS ${GST_APP_INCLUDE_DIRS})
-
     # Link GStreamer libraries
     target_link_libraries(${PROJECT} PRIVATE ${GST_LIBRARIES})
     target_link_libraries(${PROJECT} PRIVATE ${GST_APP_LIBRARIES})
@@ -80,6 +78,8 @@ foreach(PROJECT ${PROJECTS})
         mount resolv expat pangoft2-1.0 blkid
         EGL GLESv2
     )
+if(TVM_ENABLE)
     target_link_libraries(${PROJECT} PRIVATE ${TVM_RUNTIME_LIB})
+endif()
 
 endforeach()

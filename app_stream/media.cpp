@@ -94,13 +94,20 @@ std::vector<videodev_t> query_device_status(const std::string& device_type) {
 int media_init ( videodev_t * video, int width, int height) {
 
     char cmd[100];
-
-    const char* commands[4] =
+/*
+    media-ctl -d /dev/media1 -l "'rzg2l_csi2 16010400.csi21':1 -> 'CRU output':0 [1]"
+    media-ctl -d /dev/media1 -V "'rzg2l_csi2 16010400.csi21':1 [fmt:UYVY8_2X8/$imx462_res field:none]"
+    media-ctl -d /dev/media1 -V "'imx462 1-001f':0 [fmt:UYVY8_2X8/$imx462_res field:none]"
+*/
+    const char* commands[] =
     {
         "media-ctl -d %s -r",
         "media-ctl -d %s -l \"\'rzg2l_csi2 %s.csi2%s\':1 -> \'CRU output\':0 [1]\"",
+        "media-ctl -d %s -V \"\'rzg2l_csi2 %s.csi2%s\':1 [fmt:UYVY8_2X8/%dx%d field:none]\"",
         "media-ctl -d %s -V \"\'imx462 0-001f\':0 [fmt:UYVY8_2X8/%dx%d field:none]\"",
-        "media-ctl -d %s -V \"\'rzg2l_csi2 %s.csi2%s\':1 [fmt:UYVY8_2X8/%dx%d field:none]\""
+        "media-ctl -d %s -V \"\'imx462 1-001f\':0 [fmt:UYVY8_2X8/%dx%d field:none]\"",
+        "media-ctl -d %s -V \"\'imx462 6-001f\':0 [fmt:UYVY8_2X8/%dx%d field:none]\"",
+        "media-ctl -d %s -V \"\'imx462 7-001f\':0 [fmt:UYVY8_2X8/%dx%d field:none]\""
     };
 
     printf("%s\n", video->dev_name.c_str());
@@ -110,10 +117,13 @@ int media_init ( videodev_t * video, int width, int height) {
     sprintf(cmd, commands[1],video->media_name.c_str(), video->id.c_str(), video->channel.c_str());
     printf("%s\n",cmd);
     system(cmd);
-    sprintf(cmd, commands[2],video->media_name.c_str(), width, height);
+    sprintf(cmd, commands[2],video->media_name.c_str(), video->id.c_str(), video->channel.c_str(), width, height);
     printf("%s\n",cmd);
     system(cmd);
-    sprintf(cmd, commands[3],video->media_name.c_str(), video->id.c_str(), video->channel.c_str(), width, height);
+    int n = std::stoi(video->channel.c_str()) + 3;
+
+    sprintf(cmd, commands[n],video->media_name.c_str(), width, height);
     printf("%s\n",cmd);
     system(cmd);
+    
 }

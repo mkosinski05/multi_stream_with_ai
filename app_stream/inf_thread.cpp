@@ -401,7 +401,7 @@ void * thread_infer(void * p_param)
         
         outputfile << PREPROCESS_START_TIME << " " << HEAD_COUNT  << " " << FPS << " " << TOTAL_TIME << " " << INF_TIME << " " << PRE_PROC_TIME << " " << POST_PROC_TIME << "\n";
         printf ( "ID: %X,\tInference FPS: %f \n",  p_pipeline->thread_id, FPS);
-     
+        auto FILE_END_TIME = std::chrono::seconds(1s).count();
     }
     // file close
     outputfile.close();

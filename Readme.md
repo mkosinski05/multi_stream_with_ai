@@ -4,7 +4,7 @@ The pupose of the projects is to examine and verify each of the software and har
 ## CMAKE 
 ```bash
 export SDK=/opt/poky/rzv2h
-cmake -DCMAKE_TOOLCHAIN_FILE=./toolchain/runtime.cmake -DV2H=ON ..
+cmake -DCMAKE_TOOLCHAIN_FILE=./toolchain/runtime.cmake -DTVM_ENABLE=ON ..
 ```
 ## Configure DEBUG
 # Setup EVK
