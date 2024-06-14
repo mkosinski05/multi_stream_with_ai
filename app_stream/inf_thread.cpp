@@ -293,7 +293,7 @@ void * thread_infer(void * p_param)
         if (0 < preruntime.Pre(&in_param, &output_ptr, &out_size))
         {
             std::cerr << "[ERROR] Failed to run Pre-processing Runtime Pre()." << std::endl;
-            return 0;
+            continue;
         }
         // Release GST Buffer
         gst_buffer_unmap(buffer, &info);

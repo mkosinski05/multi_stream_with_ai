@@ -116,11 +116,11 @@ typedef struct _perf_info_t {
     unsigned long job_id;
     long ercd;
 
-    struct timespec yuv2nv12_start;
-    struct timespec yuv2nv12_end;
+    float convert_time;
 
     struct timespec encode_start;
     struct timespec encode_end;
+    float encode_time;
 
 } perf_info_t;
 /********************************** FOR OMX ***********************************/

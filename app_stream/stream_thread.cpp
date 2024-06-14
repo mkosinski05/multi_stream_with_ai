@@ -11,6 +11,7 @@ static double timedifference_msec(struct timespec t0, struct timespec t1)
 {
     return (t1.tv_sec - t0.tv_sec) * 1000.0 + (t1.tv_nsec - t0.tv_nsec) / 1000000.0;
 }
+
 static void convertYUYVtoNV12(const Mat& yuyvImage, Mat& nv12Image) {
     int width = yuyvImage.cols;
     int height = yuyvImage.rows;
@@ -175,42 +176,30 @@ OMX_ERRORTYPE omx_fill_buffer_done(OMX_HANDLETYPE hComponent,
 
 /******************************** FOR THREADS *********************************/
 
-void * thread_input(void * p_param)
+void* thread_input(void* p_param)
 {
-    PipelineData *p_pipeline = (PipelineData*)p_param;
+    PipelineData* p_pipeline = (PipelineData*)p_param;
     assert(p_pipeline != NULL);
 
-    in_data_t * p_data = (in_data_t*)p_pipeline->in_data;
+    in_data_t* p_data = (in_data_t*)p_pipeline->in_data;
     assert(p_data != NULL);
 
-    /* Buffer of input port */
-    int index = -1;
-    OMX_BUFFERHEADERTYPE * p_buf = NULL;
+    printf("Worker in ID: %X\n", p_pipeline->thread_id);
 
-    float convert_time = 0.0f;
-
-    GstBuffer *buffer = NULL;
-
-    // Create Mat objects for Y and UV planes
-    //cv::Mat y_plane(FRAME_HEIGHT_IN_PIXELS, FRAME_WIDTH_IN_PIXELS, CV_8UC1, nv12_array);
-    //cv::Mat uv_plane(FRAME_HEIGHT_IN_PIXELS / 2, FRAME_WIDTH_IN_PIXELS / 2, CV_8UC2, nv12_array + y_plane_size);
-
-    // Merge Y and UV planes into a single NV12 Mat
-    //std::vector<cv::Mat> nv12_planes = { y_plane, uv_plane };
-    cv::Mat nv12_image;
-    //cv::vconcat(nv12_planes, nv12_image);
-
+    OMX_BUFFERHEADERTYPE* p_buf = NULL;
+    GstBuffer* buffer = NULL;
+    
     GstMapInfo info;
 
- 
-    /**************************************************************************
-     *                       STEP 7: THREAD'S MAIN LOOP                       *
-     **************************************************************************/
+    mmngr_buf_t *p_yuyv_buf = mmngr_alloc_nv12_dmabufs(YUYV_BUFFER_COUNT,
+                                           YUYV_FRAME_SIZE_IN_BYTES);
+    assert(p_yuyv_buf != NULL);
 
-    while ( p_pipeline->running)
+    struct timespec convert_start;
+    struct timespec convert_end;
+
+    while (p_pipeline->running)
     {
-        /* Capture Camera image */
-        // Wait for a buffer to be available
         {
             std::unique_lock<std::mutex> lock(p_pipeline->queue_mutex);
             p_pipeline->queue_cond.wait(lock, [&]{ return !p_pipeline->buffer_queue.empty() || !p_pipeline->running; });
@@ -222,118 +211,75 @@ void * thread_input(void * p_param)
         }
         assert(buffer != NULL);
 
-        timespec_get(&p_pipeline->metrics.yuv2nv12_start, TIME_UTC);
+        timespec_get(&convert_start, TIME_UTC);
 
-
-        if (gst_buffer_map(buffer, &info, GST_MAP_READ)) {
-                   
-            // Copy the capture buffer to the CMA Buffer
-            // Do this because software conversion is slow (> 122mseconds)
-            memcpy((void*)p_pipeline->in_data->p_yuyv_bufs->virt_addr, info.data, YUYV_FRAME_SIZE_IN_BYTES);
-            
-            
-            // Release GST Buffer
+        if (gst_buffer_map(buffer, &info, GST_MAP_READ))
+        {
+            memcpy((void*)p_yuyv_buf->virt_addr, info.data, YUYV_FRAME_SIZE_IN_BYTES);
             gst_buffer_unmap(buffer, &info);
             gst_buffer_unref(buffer);
-#if 0
-            FILE * fp = fopen("out.yuyv", "wb");
-            fwrite((void*)p_pipeline->in_data->p_yuyv_bufs->virt_addr, 1, YUYV_FRAME_SIZE_IN_BYTES, fp);
-            fclose(fp);
-#endif
         }
 
-        /* Convert the YUYV image to NV12 using OpenCV */
-        cv::Mat yuyv_image( FRAME_HEIGHT_IN_PIXELS, 
-                            FRAME_WIDTH_IN_PIXELS, CV_8UC2, 
-                            (void*)p_pipeline->in_data->p_yuyv_bufs->virt_addr);
-#if 1
-        convertYUYVtoNV12(yuyv_image, nv12_image);
-#endif
-        timespec_get(&p_pipeline->metrics.yuv2nv12_end, TIME_UTC);
-        convert_time = (float)((timedifference_msec(
-                                    p_pipeline->metrics.yuv2nv12_start, 
-                                    p_pipeline->metrics.yuv2nv12_end)));
-
-        printf("ID: %X,\tYUUV to NV12: %f\n", p_pipeline->thread_id,convert_time);
-
-        
-        
-#if 1
-        /* OMX ENCODE VIDEO STREAM */
-        /* Wait for OMX is ready */
-        assert(pthread_mutex_lock(p_data->p_mutex) == 0);
-
-        while (queue_is_empty(p_data->p_queue))
         {
-            /* Thread will sleep until the queue is not empty */
-            assert(0 == pthread_cond_wait(p_data->p_cond_available,
-                                          p_data->p_mutex));
+            cv::Mat nv12_image;
+            cv::Mat yuyv_image(FRAME_HEIGHT_IN_PIXELS, FRAME_WIDTH_IN_PIXELS, CV_8UC2, (void*)p_yuyv_buf->virt_addr);
+            convertYUYVtoNV12(yuyv_image, nv12_image);
+
+            timespec_get(&convert_end, TIME_UTC);
+
+            p_pipeline->metrics.convert_time = (float)((timedifference_msec(convert_start, convert_end)));
+            
+            assert(pthread_mutex_lock(p_data->p_mutex) == 0);
+
+            while (queue_is_empty(p_data->p_queue))
+            {
+                assert(0 == pthread_cond_wait(p_data->p_cond_available, p_data->p_mutex));
+            }
+
+            timespec_get(&p_pipeline->metrics.encode_start, TIME_UTC);
+            assert(!queue_is_empty(p_data->p_queue));
+            p_buf = *(OMX_BUFFERHEADERTYPE**)(queue_dequeue(p_data->p_queue));
+            assert(p_buf != NULL);
+
+            assert(pthread_mutex_unlock(p_data->p_mutex) == 0);
+
+            int index = omx_get_index(p_buf, p_data->pp_bufs, NV12_BUFFER_COUNT);
+            assert(index != -1);
+
+            memcpy((void*)p_data->p_nv12_bufs[index].virt_addr, nv12_image.data, NV12_FRAME_SIZE_IN_BYTES);
         }
 
-        /* At this point, the queue must have something in it */
-        assert(!queue_is_empty(p_data->p_queue));
 
-        /* Receive buffer (of input port) from the queue */
-        p_buf = *(OMX_BUFFERHEADERTYPE **)(queue_dequeue(p_data->p_queue));
-        assert(p_buf != NULL);
-
-        assert(pthread_mutex_unlock(p_data->p_mutex) == 0);
-
-        /* Get OMX buffer's index */
-        index = omx_get_index(p_buf, p_data->pp_bufs, NV12_BUFFER_COUNT);
-        assert(index != -1);
-
-        // Copy OpenCV Nuffer to OMX buffer
-    #if 0
-        memcpy((void*)p_data->p_nv12_bufs[index].virt_addr, nv12_image.data, NV12_FRAME_SIZE_IN_BYTES);
-        FILE * fp = fopen("out.yuv", "wb");
-        fwrite((void*)p_pipeline->in_data->p_yuyv_bufs->virt_addr, 1, YUYV_FRAME_SIZE_IN_BYTES, fp);
-        fclose(fp);
-    #endif
-        
-
-        /* Copy the NV12 image to the OMX buffer */ 
-        /* If 'p_buf' contains data, 'nFilledLen' must not be zero */
         p_buf->nFilledLen = NV12_FRAME_SIZE_IN_BYTES;
-
-        /* Section 6.14.1 in document 'R01USxxxxEJxxxx_vecmn_v1.0.pdf' */
         p_buf->nFlags = OMX_BUFFERFLAG_ENDOFFRAME;
 
         if (g_int_signal)
         {
             p_buf->nFlags |= OMX_BUFFERFLAG_EOS;
-
-            /* Exit loop */
             p_pipeline->running = false;
         }
 
-        /* Send the buffer to the input port of the component */
         assert(OMX_EmptyThisBuffer(p_data->handle, p_buf) == OMX_ErrorNone);
-#endif
     }
 
     printf("Thread '%s' exited\n", __FUNCTION__);
     return NULL;
 }
 
-void * thread_output(void * p_param)
+
+void* thread_output(void* p_param)
 {
-    PipelineData *p_pipeline = (PipelineData*)p_param;
+    PipelineData* p_pipeline = (PipelineData*)p_param;
     assert(p_pipeline != NULL);
 
-    out_data_t * p_data = (out_data_t *)p_pipeline->out_data;
+    out_data_t* p_data = (out_data_t*)p_pipeline->out_data;
     assert(p_data != NULL);
 
-    /* Buffer of output port */
-    OMX_BUFFERHEADERTYPE * p_buf = NULL;
+    printf("Worker out ID: %X\n", p_pipeline->thread_id);
 
-    /* Check parameter */
-    assert(p_data != NULL);
-
-    /* Open file */
-    p_pipeline->p_h264_fd = fopen( p_pipeline->out_filename.c_str(), "wb");
+    OMX_BUFFERHEADERTYPE* p_buf = NULL;
+    p_pipeline->p_h264_fd = fopen(p_pipeline->out_filename.c_str(), "wb");
     assert(p_pipeline->p_h264_fd != NULL);
-
 
     while (p_pipeline->running)
     {
@@ -341,42 +287,43 @@ void * thread_output(void * p_param)
 
         while (queue_is_empty(p_data->p_queue))
         {
-            /* The thread will sleep until the queue is not empty */
-            assert(0 == pthread_cond_wait(p_data->p_cond_available,
-                                          p_data->p_mutex));
+            assert(0 == pthread_cond_wait(p_data->p_cond_available, p_data->p_mutex));
         }
 
-        /* At this point, the queue must have something in it */
         assert(!queue_is_empty(p_data->p_queue));
-
-        /* Receive buffer from the queue */
-        p_buf = *(OMX_BUFFERHEADERTYPE **)(queue_dequeue(p_data->p_queue));
+        p_buf = *(OMX_BUFFERHEADERTYPE**)(queue_dequeue(p_data->p_queue));
         assert(p_buf != NULL);
 
         assert(pthread_mutex_unlock(p_data->p_mutex) == 0);
+        timespec_get(&p_pipeline->metrics.encode_end, TIME_UTC);
 
-        /* Write H.264 data to a file */
-        fwrite((char *)(p_buf->pBuffer), 1, p_buf->nFilledLen, p_pipeline->p_h264_fd);
+        fwrite((char*)(p_buf->pBuffer), 1, p_buf->nFilledLen, p_pipeline->p_h264_fd);
+        
+        
 
         if (p_buf->nFlags & OMX_BUFFERFLAG_EOS)
         {
-            /* Exit loop */
             p_pipeline->running = 0;
         }
         else
         {
             p_buf->nFilledLen = 0;
-            p_buf->nFlags     = 0;
-
-            /* Send the buffer to the output port of the component */
+            p_buf->nFlags = 0;
             assert(OMX_FillThisBuffer(p_data->handle, p_buf) == OMX_ErrorNone);
         }
+        float encode_time = (float)((timedifference_msec(p_pipeline->metrics.encode_start, p_pipeline->metrics.encode_end)));
+        float fps = (1.0 / (encode_time + p_pipeline->metrics.convert_time)) * 1000;
+        
+        printf("ID: %X,\tFPS: %f\tConvert: %f\tEncode: %f\n ", 
+                                    p_pipeline->thread_id,
+                                    fps,
+                                    p_pipeline->metrics.convert_time, 
+                                    encode_time);
     }
 
-    /* Close file */
     fclose(p_pipeline->p_h264_fd);
-
     printf("Thread '%s' exited\n", __FUNCTION__);
     return NULL;
 }
+
 

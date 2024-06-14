@@ -93,7 +93,7 @@ static GstFlowReturn new_sample_callback(GstAppSink *appsink, gpointer user_data
         timespec_get(&data->end_time, TIME_UTC);
         cap_time = (float)((timedifference_msec(data->start_time, data->end_time)));
         timespec_get(&data->start_time, TIME_UTC);
-        g_print("ID: %X,\tCapture : %f\n", data->thread_id, cap_time);
+        //g_print("ID: %X,\tCapture : %f\n", data->thread_id, cap_time);
 
         if (buffer) {
             gst_buffer_ref(buffer);  // Increment ref count to ensure buffer is valid during processing
@@ -235,9 +235,7 @@ int main(int argc, char *argv[]) {
                                            NV12_FRAME_SIZE_IN_BYTES);
     assert(p_nv12_bufs != NULL);
     
-    p_yuyv_buf = mmngr_alloc_nv12_dmabufs(YUYV_BUFFER_COUNT,
-                                           YUYV_FRAME_SIZE_IN_BYTES);
-    assert(p_yuyv_buf != NULL);
+    
 
     /**************************************************************************
      *                         STEP 5: SET UP OMX IL                          *
@@ -363,8 +361,8 @@ int main(int argc, char *argv[]) {
 
     PipelineData pipelines[NUM_PIPELINES];
     gchar* pipeline_str[NUM_PIPELINES] = {
-        "v4l2src device=/dev/video0 ! video/x-raw, width=1920, height=1080 ! appsink name=sink0",
-        "v4l2src device=/dev/video1 ! video/x-raw, width=1280, height=720 ! appsink name=sink1"
+        "v4l2src device=/dev/video0 ! video/x-raw, width=%d, height=%d ! appsink name=sink0",
+        "v4l2src device=/dev/video1 ! video/x-raw, width=%d, height=%d ! appsink name=sink1"
     };
 
      /**************************************************************************
@@ -376,14 +374,18 @@ int main(int argc, char *argv[]) {
      /**************************************************************************
  *                          LOOP THROUGH EACH CAMERA     
      **************************************************************************/
-    for ( auto& camera : cameras) { 
-    //for (int i = 0; i < NUM_PIPELINES; i++) {
+    for ( auto& camera : cameras) 
+    {
+        if ( i >= NUM_PIPELINES )
+            break;
         /**************************************************************************
  *                          Initialize Media      
         **************************************************************************/
         media_init( &camera, FRAME_WIDTH_IN_PIXELS, FRAME_HEIGHT_IN_PIXELS);
+        gchar pipe_str[80];
+        sprintf( pipe_str, pipeline_str[i], FRAME_WIDTH_IN_PIXELS, FRAME_HEIGHT_IN_PIXELS);
         
-        pipelines[i].pipeline = gst_parse_launch(pipeline_str[i], NULL);
+        pipelines[i].pipeline = gst_parse_launch(pipe_str, NULL);
         if (!pipelines[i].pipeline) {
             g_printerr("Failed to create pipeline %d.\n", i);
             return -1;
@@ -416,15 +418,15 @@ int main(int argc, char *argv[]) {
         if (pthread_create(&pipelines[i].thread_id, NULL, pipeline_thread, &pipelines[i]) != 0) {
             g_printerr("Failed to create thread for pipeline %d.\n", i);
             return -1;
-        }
+        }       
         i++;
-        break;
     }
 
     // Start the timer
     setitimer(ITIMER_REAL, &timer, NULL);
     
-    for (int i = 0; i < NUM_PIPELINES; i++) {
+    for (int i = 0; i < NUM_PIPELINES; i++) 
+    {
         pthread_join(pipelines[i].thread_id, NULL);
         g_free(pipelines[i].pipeline_name);
         
