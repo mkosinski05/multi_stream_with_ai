@@ -127,7 +127,7 @@ OMX_ERRORTYPE omx_empty_buffer_done(OMX_HANDLETYPE hComponent,
         /* At this point, the queue must not be full */
         assert(!queue_is_full(p_data->p_in_queue));
 
-        /* Add 'pBuffer' to the queue */
+        /* Enqueue empty buffer to be used by Input Thread */
         assert(queue_enqueue(p_data->p_in_queue, &pBuffer));
 
         /* Now, there is an element inside the queue.
@@ -160,7 +160,7 @@ OMX_ERRORTYPE omx_fill_buffer_done(OMX_HANDLETYPE hComponent,
         /* Add this point, the queue must not be full */
         assert(!queue_is_full(p_data->p_out_queue));
 
-        /* Add 'pBuffer' to the queue */
+        /* Enqueue full buffer and send to Out Thread */
         assert(queue_enqueue(p_data->p_out_queue, &pBuffer));
 
         /* Now, there is an element inside the queue.
@@ -201,34 +201,53 @@ void* thread_input(void* p_param)
     while (p_pipeline->running)
     {
         {
+            /* Lock GStreamer and wait for image dequeue */
             std::unique_lock<std::mutex> lock(p_pipeline->queue_mutex);
             p_pipeline->queue_cond.wait(lock, [&]{ return !p_pipeline->buffer_queue.empty() || !p_pipeline->running; });
 
+            /* Check that GStreamer is still running */
             if (!p_pipeline->running) break;
 
+            /* Pop GStreamer buffer from appsink */
             buffer = p_pipeline->buffer_queue.front();
             p_pipeline->buffer_queue.pop();
         }
         assert(buffer != NULL);
 
+        /* Start Convert Counter */
         timespec_get(&convert_start, TIME_UTC);
 
         if (gst_buffer_map(buffer, &info, GST_MAP_READ))
         {
+            /* Copy GSTreamer buffer to thead buffer */
+            /* GSTREAMER RECOMMENDS THIS IF PROCESSING WILL TAKE LONGER THAT THE GSTREAMER FPS */
             memcpy((void*)p_yuyv_buf->virt_addr, info.data, YUYV_FRAME_SIZE_IN_BYTES);
+
+            /* Release GSTreamer buffer */
             gst_buffer_unmap(buffer, &info);
             gst_buffer_unref(buffer);
         }
+        
+        /*
+        *      Start Processing image : convert YUYV to NV12 
+        */
+        cv::Mat nv12_image;
+        cv::Mat yuyv_image(FRAME_HEIGHT_IN_PIXELS, FRAME_WIDTH_IN_PIXELS, CV_8UC2, (void*)p_yuyv_buf->virt_addr);
+        convertYUYVtoNV12(yuyv_image, nv12_image);
 
-        {
-            cv::Mat nv12_image;
-            cv::Mat yuyv_image(FRAME_HEIGHT_IN_PIXELS, FRAME_WIDTH_IN_PIXELS, CV_8UC2, (void*)p_yuyv_buf->virt_addr);
-            convertYUYVtoNV12(yuyv_image, nv12_image);
+        /* End Capture and Format Converion */
+        timespec_get(&convert_end, TIME_UTC);
 
-            timespec_get(&convert_end, TIME_UTC);
+        p_pipeline->metrics.convert_time = (float)((timedifference_msec(convert_start, convert_end)));
 
-            p_pipeline->metrics.convert_time = (float)((timedifference_msec(convert_start, convert_end)));
-            
+        /*
+        *       Start H.265 Comparession with OMX
+        */
+
+   
+        /* Lock OMX IN till OMX buffer is available */   
+        if ( p_pipeline->processing_thread ) 
+        { 
             assert(pthread_mutex_lock(p_data->p_mutex) == 0);
 
             while (queue_is_empty(p_data->p_queue))
@@ -237,29 +256,35 @@ void* thread_input(void* p_param)
             }
 
             timespec_get(&p_pipeline->metrics.encode_start, TIME_UTC);
-            assert(!queue_is_empty(p_data->p_queue));
+                assert(!queue_is_empty(p_data->p_queue));
             p_buf = *(OMX_BUFFERHEADERTYPE**)(queue_dequeue(p_data->p_queue));
             assert(p_buf != NULL);
 
-            assert(pthread_mutex_unlock(p_data->p_mutex) == 0);
+                assert(pthread_mutex_unlock(p_data->p_mutex) == 0);
 
             int index = omx_get_index(p_buf, p_data->pp_bufs, NV12_BUFFER_COUNT);
             assert(index != -1);
 
             memcpy((void*)p_data->p_nv12_bufs[index].virt_addr, nv12_image.data, NV12_FRAME_SIZE_IN_BYTES);
+            
+        
+
+        /* Send OMX signal next image is ready for processing */
+            p_buf->nFilledLen = NV12_FRAME_SIZE_IN_BYTES;
+            p_buf->nFlags = OMX_BUFFERFLAG_ENDOFFRAME;
+
+            if (g_int_signal)
+            {
+                p_buf->nFlags |= OMX_BUFFERFLAG_EOS;
+                p_pipeline->running = false;
+            }
+
+            assert(OMX_EmptyThisBuffer(p_data->handle, p_buf) == OMX_ErrorNone);
         }
-
-
-        p_buf->nFilledLen = NV12_FRAME_SIZE_IN_BYTES;
-        p_buf->nFlags = OMX_BUFFERFLAG_ENDOFFRAME;
-
-        if (g_int_signal)
+        else
         {
-            p_buf->nFlags |= OMX_BUFFERFLAG_EOS;
-            p_pipeline->running = false;
+            sleep(1);
         }
-
-        assert(OMX_EmptyThisBuffer(p_data->handle, p_buf) == OMX_ErrorNone);
     }
 
     printf("Thread '%s' exited\n", __FUNCTION__);
@@ -282,7 +307,10 @@ void* thread_output(void* p_param)
     assert(p_pipeline->p_h264_fd != NULL);
 
     while (p_pipeline->running)
-    {
+    {   
+        if ( p_pipeline->processing_thread ){
+
+        
         assert(pthread_mutex_lock(p_data->p_mutex) == 0);
 
         while (queue_is_empty(p_data->p_queue))
@@ -319,6 +347,9 @@ void* thread_output(void* p_param)
                                     fps,
                                     p_pipeline->metrics.convert_time, 
                                     encode_time);
+        }
+        else{
+            sleep(3);        }
     }
 
     fclose(p_pipeline->p_h264_fd);

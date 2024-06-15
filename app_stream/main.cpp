@@ -132,16 +132,17 @@ void* pipeline_thread(void* arg) {
     pthread_t thread_in_id;
     pthread_t thread_out_id;
     pthread_t thread_inf_id;
-#if 1
+
+    
     if ( !g_infThreadIsCreated ) {
         if (pthread_create(&thread_inf_id, NULL, thread_infer, data) != 0) {
             g_printerr("Failed to create processing thread for pipeline %s.\n", data->pipeline_name);
             return NULL;
         }
         g_infThreadIsCreated = true;
+        data->processing_thread = true;
     }
-#endif
-#if 1
+
     // Start processing thread
     data->in_data = &in_data;
     data->out_data = &out_data;
@@ -158,7 +159,8 @@ void* pipeline_thread(void* arg) {
         g_printerr("Failed to create processing thread for pipeline %s.\n", data->pipeline_name);
         return NULL;
     }
-#endif
+    
+
 
     // Create and run the main loop for this pipeline
     data->main_loop = g_main_loop_new(NULL, FALSE);
@@ -189,6 +191,7 @@ int main(int argc, char *argv[]) {
     struct sigaction sig_act;
 
     /* NV12 buffers */
+
     mmngr_buf_t * p_nv12_bufs = NULL;
 
     /* YUYV buffer */

@@ -227,6 +227,7 @@ typedef struct {
     std::string out_filename;
 
     perf_info_t metrics;
+    bool processing_thread = false;
 
 } PipelineData;
 /********************************** FOR OMX ***********************************/
