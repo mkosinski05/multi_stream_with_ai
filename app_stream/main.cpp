@@ -22,8 +22,6 @@
 #include "media.h"
 #include "stream.h"
 
-#define NUM_PIPELINES 2
-
 
 /* Shared data between OMX's callbacks */
 omx_data_t omx_data;
@@ -44,6 +42,7 @@ void * thread_infer(void * p_param);
 /* Mutexes for condition variables */
 pthread_mutex_t mut_in;
 pthread_mutex_t mut_out;
+
 
 /* Condition variables */
 pthread_cond_t cond_in_available;
@@ -267,7 +266,7 @@ int main(int argc, char *argv[]) {
     assert(omx_set_out_port_fmt(handle, H264_BITRATE, OMX_VIDEO_CodingAVC));
 
     assert(omx_set_port_buf_cnt(handle, 1, H264_BUFFER_COUNT));
-
+  
     /* Transition into state IDLE */
     assert(OMX_ErrorNone == OMX_SendCommand(handle,
                                             OMX_CommandStateSet,
@@ -413,6 +412,8 @@ int main(int argc, char *argv[]) {
 
         pipelines[i].bus = gst_element_get_bus(pipelines[i].pipeline);
         pipelines[i].running = 1;
+
+        pipelines[i].index = i;
 
         /* 
         *   CREATE THREAD FOR EACH CAMAERA 

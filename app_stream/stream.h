@@ -229,6 +229,8 @@ typedef struct {
     perf_info_t metrics;
     bool processing_thread = false;
 
+    uint8_t index;
+
 } PipelineData;
 /********************************** FOR OMX ***********************************/
 
