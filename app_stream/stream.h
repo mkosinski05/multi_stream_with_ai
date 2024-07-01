@@ -42,25 +42,19 @@
 
 #define NV12_FRAME_SIZE_IN_BYTES (FRAME_WIDTH_IN_PIXELS  * \
                                   FRAME_HEIGHT_IN_PIXELS * 1.5f)
-
+                                  
 #define FRAMERATE 30 /* FPS */
 /********************************** FOR STREAMS *******************************/
 #define NUM_PIPELINES 2
 
 /********************************** FOR V4L2 **********************************/
 
-/* The sample app is tested OK with:
- *   - Logitech C270 HD Webcam.
- *   - Logitech C920 HD Pro Webcam.
- *   - Logitech C930e Business Webcam.
- *   - Logitech BRIO Ultra HD Pro Business Webcam */
-#define USB_CAMERA_FD "/dev/video0"
-
 /* The number of buffers to be allocated for the camera */
 #define YUYV_BUFFER_COUNT 1
 
 #define CAM_COUNT 2
 
+#define AI_INFERENCE_ENABLE
 
 /********************************** FOR OMX ***********************************/
 
@@ -104,23 +98,26 @@ void * thread_infer(void * p_param);
 
 /********************************** FOR VSPM ISU ***********************************/
 typedef struct {
-	unsigned long job_id;
-	long ercd;
 
 	pthread_mutex_t mutex;
 	pthread_cond_t cond;
+
+    queue_t queue;
+
 } vspm_tp_cb_info_t;
 
 /********************************** PERFORMACE ********************************/
 typedef struct _perf_info_t {
-    unsigned long job_id;
-    long ercd;
-
-    float convert_time;
 
     struct timespec encode_start;
     struct timespec encode_end;
+
+    struct timespec fps_start;
+    struct timespec fps_end;
+
+    float convert_time;
     float encode_time;
+    float fps;
 
 } perf_info_t;
 /********************************** FOR OMX ***********************************/
@@ -171,6 +168,9 @@ typedef struct
     /* When signaled, the condition variable confirms there is a possible
      * buffer in 'p_queue' */
     pthread_cond_t * p_cond_available;
+
+    void* vspm_handle;
+    pthread_mutex_t * p_vspm_mutex;
 
 } in_data_t;
 

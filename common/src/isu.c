@@ -80,10 +80,10 @@ isu_job_t* create_job_yuyv_to_nv12( int width, int height )
     p_src->width = width;
     p_src->height = height;
     p_src->format = 0x21; /* YCbCr422-8bit alias YUYV */
-    p_src->swap = ISU_SWAP_NO;
+    p_src->swap = 0; //(ISU_SWAP_B|ISU_SWAP_W|ISU_SWAP_L|ISU_SWAP_LL);
     p_src->td = NULL;
     p_src->alpha = NULL;
-    p_src->uv_conv = ISU_UV_CONV_ON;
+    p_src->uv_conv = ISU_UV_CONV_OFF;
 
     job->isu_start->src_par = p_src;
     job->isu_start->dl_hard_addr = 0ul;
@@ -106,6 +106,7 @@ isu_job_t* create_job_yuyv_to_nv12( int width, int height )
 		return NULL;
 	}
     p_des->stride = p_src->stride/2;
+    // For NV12 this must be non-zero and multiple of 32
     p_des->stride_c = p_src->stride/2;
     p_des->format = 0x23; // YCbCr420-8bit alias NV12 format
     p_des->swap = ISU_SWAP_NO;
@@ -128,15 +129,17 @@ isu_job_t* create_job_yuyv_to_nv12( int width, int height )
 	}
     memset (p_csc, 0, sizeof(struct isu_csc_t));
     p_csc->csc = ISU_CSC_CUSTOM;
-    //p_csc->csc = ISU_CSC_RAW;
-    p_csc->k_matrix[0][0] = 0x400; // ISU_WPF_MUL10000_0400hK11 = 400h
-    p_csc->k_matrix[1][0] = 0x400; // ISU_WPF_MUL40400_0000hK22 = 400h
-    p_csc->k_matrix[2][0] = 0x400; // ISU_WPF_MUL60000_0400hK33 = 400h
-    p_csc->offset[3][2] = 0; //
+    
+    p_csc->k_matrix[0][0] = 0x400; // ISU_WPF_MUL1 0000_0400h K11 = 400h
+    p_csc->k_matrix[1][1] = 0x400; // ISU_WPF_MUL4 0400_0000h K22 = 400h
+    p_csc->k_matrix[2][2] = 0x400; // ISU_WPF_MUL6 0000_0400h K33 = 400h
+  
     p_csc->clip[0][0] = 0x00; // CLP (MAX/MIN)_A = FFh, 00h
     p_csc->clip[0][1] = 0xFF;
-    p_csc->clip[1][0] = 0x00; // CLP (MAX/MIN)_B = FFh, 00h, C = FFh, 00h
+    p_csc->clip[1][0] = 0x00; // CLP (MAX/MIN)_B = FFh, 00h
     p_csc->clip[1][1] = 0xFF;
+    p_csc->clip[2][0] = 0x00; // CLP (MAX/MIN)_C = FFh, 00h
+    p_csc->clip[2][1] = 0xFF;
     p_des->csc = p_csc;
 
     job->isu_start->dst_par = p_des;

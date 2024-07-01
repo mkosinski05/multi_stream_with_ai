@@ -228,8 +228,7 @@ void * thread_infer(void * p_param)
         /**********************************************************************
          *      DRP-AI TVM Preprocessing 
         ***********************************************************************/
-       /* Preprocess time start */
-        auto t0 = std::chrono::high_resolution_clock::now();
+       
         // add
             std::chrono::system_clock::time_point tp = std::chrono::system_clock::now();
             std::chrono::milliseconds tp_msec = std::chrono::duration_cast<std::chrono::milliseconds>(tp.time_since_epoch());
@@ -288,6 +287,9 @@ void * thread_infer(void * p_param)
 
         s_preproc_param_t in_param;
         in_param.pre_in_addr    = (uint64_t)info.data;
+
+        /* Preprocess time start */
+        auto t0 = std::chrono::high_resolution_clock::now();
 
         /*Run pre-processing*/
         if (0 < preruntime.Pre(&in_param, &output_ptr, &out_size))
@@ -400,7 +402,7 @@ void * thread_infer(void * p_param)
 
         
         outputfile << PREPROCESS_START_TIME << " " << HEAD_COUNT  << " " << FPS << " " << TOTAL_TIME << " " << INF_TIME << " " << PRE_PROC_TIME << " " << POST_PROC_TIME << "\n";
-        printf ( "ID: %X,\tInference FPS: %f \n",  p_pipeline->thread_id, FPS);
+        printf ( "ID: %X,\tInference:\t\tFPS: %f \n",  p_pipeline->thread_id, FPS);
         auto FILE_END_TIME = std::chrono::seconds(1s).count();
     }
     // file close
