@@ -159,8 +159,9 @@ const static double anchors[] =
 /* DRP_MAX_FREQ and DRPAI_FREQ are the   */
 /* frequency settings for DRP-AI.        */
 /* Basically use the default values      */
-
-#define DRP_MAX_FREQ                (2)
+#ifdef DEVICE_IS_RZV2N
+//#define DRP_MAX_FREQ                (2)
+#define DRP_MAX_FREQ                (4)
 /* DRP_MAX_FREQ can be set from 2 to 127 */
 /* 2: 420MHz                             */
 /* 3: 315MHz                             */
@@ -169,7 +170,8 @@ const static double anchors[] =
 /* Calculation Formula:                  */
 /*     1260MHz /(DRP_MAX_FREQ + 1)       */
 
-#define DRPAI_FREQ                  (5)
+//#define DRPAI_FREQ                  (5)
+#define DRPAI_FREQ                  (8)
 /* DRPAI_FREQ can be set from 1 to 127   */
 /* 1,2: 1GHz                             */
 /* 3: 630MHz                             */
@@ -180,6 +182,10 @@ const static double anchors[] =
 /* Calculation Formula:                  */
 /*     1260MHz /(DRPAI_FREQ - 1)         */
 /*     (When DRPAI_FREQ = 3 or more.)    */
-
+#else
+// RZV2H DRP Settings
+#define DRP_MAX_FREQ                (2)
+#define DRPAI_FREQ                  (5)
+#endif
 
 #endif
