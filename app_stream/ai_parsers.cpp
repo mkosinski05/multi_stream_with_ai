@@ -220,7 +220,7 @@ void yolov2_parser(float *floatarr)
  * Return value  : 0 if succeeded
  *               not 0 otherwise
  ******************************************/
-uint32_t draw_bounding_box(void)
+uint32_t draw_bounding_box(FILE *fp)
 {
     stringstream stream;
     string str = "";
@@ -233,7 +233,7 @@ uint32_t draw_bounding_box(void)
     for (i = 0; i < det.size(); i++)
     {
         /* Skip the overlapped bounding boxes */
-        if (det[i].prob == 0)
+        if (det[i].prob < 0.7)
         {
             continue;
         }
@@ -244,16 +244,16 @@ uint32_t draw_bounding_box(void)
 //        stream << fixed << setprecision(2) << det[i].prob;
 //        result_str = label_file_map[det[i].c] + " " + stream.str();
 
-//        int32_t x_min = (int)det[i].bbox.x - round((int)det[i].bbox.w / 2.);
-//        int32_t y_min = (int)det[i].bbox.y - round((int)det[i].bbox.h / 2.);
-//        int32_t x_max = (int)det[i].bbox.x + round((int)det[i].bbox.w / 2.) - 1;
-//        int32_t y_max = (int)det[i].bbox.y + round((int)det[i].bbox.h / 2.) - 1;
+        int32_t x_min = (int)det[i].bbox.x - round((int)det[i].bbox.w / 2.);
+        int32_t y_min = (int)det[i].bbox.y - round((int)det[i].bbox.h / 2.);
+        int32_t x_max = (int)det[i].bbox.x + round((int)det[i].bbox.w / 2.) - 1;
+        int32_t y_max = (int)det[i].bbox.y + round((int)det[i].bbox.h / 2.) - 1;
 
         /* Check the bounding box is in the image range */
-//        x_min = x_min < 1 ? 1 : x_min;
-//        x_max = ((DRPAI_IN_WIDTH - 2) < x_max) ? (DRPAI_IN_WIDTH - 2) : x_max;
-//        y_min = y_min < 1 ? 1 : y_min;
-//        y_max = ((DRPAI_IN_HEIGHT - 2) < y_max) ? (DRPAI_IN_HEIGHT - 2) : y_max;
+        x_min = x_min < 1 ? 1 : x_min;
+        x_max = ((DRPAI_IN_WIDTH - 2) < x_max) ? (DRPAI_IN_WIDTH - 2) : x_max;
+        y_min = y_min < 1 ? 1 : y_min;
+        y_max = ((DRPAI_IN_HEIGHT - 2) < y_max) ? (DRPAI_IN_HEIGHT - 2) : y_max;
 
 //        int32_t x2_min = x_min + BOX_THICKNESS;
 //        int32_t y2_min = y_min + BOX_THICKNESS;
@@ -264,23 +264,28 @@ uint32_t draw_bounding_box(void)
 //        x2_max = x2_max < 1 ? 1 : x2_max;
 //        y2_min = ((DRPAI_IN_HEIGHT - 2) < y2_min) ? (DRPAI_IN_HEIGHT - 2) : y2_min;
 //        y2_max = y2_max < 1 ? 1 : y2_max;
+#if 0
+        Point topLeft(x_min, y_min);
+        Point bottomRight(x_max, y_max);
 
-//        Point topLeft(x_min, y_min);
-//        Point bottomRight(x_max, y_max);
-
-//        Point topLeft2(x2_min, y2_min);
-//        Point bottomRight2(x2_max, y2_max);
+        Point topLeft2(x2_min, y2_min);
+        Point bottomRight2(x2_max, y2_max);
 
         /* Creating bounding box and class labels */
         /*cordinates for solid rectangle*/
-//        Point textleft(x_min,y_min+CLASS_LABEL_HEIGHT);
-//        Point textright(x_min+CLASS_LABEL_WIDTH,y_min);
+        Point textleft(x_min,y_min+CLASS_LABEL_HEIGHT);
+        Point textright(x_min+CLASS_LABEL_WIDTH,y_min);
 
-//        rectangle(g_frame, topLeft, bottomRight, Scalar(0, 0, 0), BOX_THICKNESS);
-//        rectangle(g_frame, topLeft2, bottomRight2, Scalar(255, 255, 255), BOX_THICKNESS);
+        rectangle(g_frame, topLeft, bottomRight, Scalar(0, 0, 0), BOX_THICKNESS);
+        rectangle(g_frame, topLeft2, bottomRight2, Scalar(255, 255, 255), BOX_THICKNESS);
         /*solid rectangle over class name */
-//        rectangle(g_frame, textleft, textright, Scalar(59, 94, 53), -1);
-//        putText(g_frame, result_str, textleft, FONT_HERSHEY_SIMPLEX, CHAR_SCALE_XS, Scalar(255, 255, 255), BOX_CHAR_THICKNESS);
+        rectangle(g_frame, textleft, textright, Scalar(59, 94, 53), -1);
+        putText(g_frame, result_str, textleft, FONT_HERSHEY_SIMPLEX, CHAR_SCALE_XS, Scalar(255, 255, 255), BOX_CHAR_THICKNESS);
+#else
+#if 1
+        fprintf(fp, "\t{person, %f, %ld, %ld, %ld, %ld}\n,", det[i].prob, x_min, y_min, x_max, y_max);
+#endif
+#endif
     }
     return result_cnt++;
 }

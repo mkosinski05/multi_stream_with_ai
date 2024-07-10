@@ -27,7 +27,7 @@ static int32_t drp_max_freq;
 static int32_t drp_freq;
 
 extern void yolov2_parser(float *floatarr);
-extern uint32_t  draw_bounding_box(void);
+extern uint32_t  draw_bounding_box(FILE *fp);
 
 /*****************************************
 * Function Name : get_drpai_start_addr
@@ -217,8 +217,11 @@ void * thread_infer(void * p_param)
     /*Load model_dir structure and its weight to runtime object */
     runtime.LoadModel(model_dir, drpaimem_addr_start + DRPAI_MEM_OFFSET);
 
-    ofstream outputfile("ai_output.txt", ios::app);
-    
+    //ofstream outputfile("ai_output.txt", ios::app);
+    FILE *outputfile = fopen("ai_output.txt", "w");
+
+    std::vector<std::chrono::milliseconds> timestamps;
+
      while (p_pipeline->running)
     {
         /* Receive camera's buffer */
@@ -229,47 +232,10 @@ void * thread_infer(void * p_param)
          *      DRP-AI TVM Preprocessing 
         ***********************************************************************/
        
-        // add
-            std::chrono::system_clock::time_point tp = std::chrono::system_clock::now();
-            std::chrono::milliseconds tp_msec = std::chrono::duration_cast<std::chrono::milliseconds>(tp.time_since_epoch());
-            PREPROCESS_START_TIME = tp_msec.count();
-        //    PREPROCESS_START_TIME = std::chrono::system_clock::to_time_t(t0);;
-        //    PREPROCESS_START_TIME = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());;
-#if 0
-        g_frame = Mat(size, CV_8UC3, p_data->p_yuyv_bufs[cam_buf.index].virt_addr );
 
-
-        /*resize the image to the model input size*/
-        resize(g_frame, frame1, size);
-
-        /* changing channel from hwc to chw */
-        vector<Mat> rgb_images;
-        split(frame1, rgb_images);
-        Mat m_flat_r = rgb_images[0].reshape(1, 1);
-        Mat m_flat_g = rgb_images[1].reshape(1, 1);
-        Mat m_flat_b = rgb_images[2].reshape(1, 1);
-        Mat matArray[] = {m_flat_r, m_flat_g, m_flat_b};
-        Mat frameCHW;
-        hconcat(matArray, 3, frameCHW);
-        /*convert to FP32*/
-        frameCHW.convertTo(frameCHW, CV_32FC3);
-
-        /* normailising  pixels */
-        divide(frameCHW, 255.0, frameCHW);
-
-        /* DRP AI input image should be continuous buffer */
-        if (!frameCHW.isContinuous())
-            frameCHW = frameCHW.clone();
-
-        Mat frame = frameCHW;
-        int ret = 0;
-
-        /* Preprocess time ends*/
-        auto t1 = std::chrono::high_resolution_clock::now();
-
-        /*start inference using drp runtime*/
-        runtime.SetInput(0, frame.ptr<float>());
-#else
+        auto tp = std::chrono::system_clock::now();
+        auto tp_msec = std::chrono::duration_cast<std::chrono::milliseconds>(tp.time_since_epoch());
+        
         GstBuffer *buffer = NULL;
 
         // Wait for a buffer to be available
@@ -306,7 +272,7 @@ void * thread_infer(void * p_param)
 
         /*start inference using drp runtime*/
         runtime.SetInput(0, (float*)output_ptr);
-#endif
+
         /**********************************************************************
          *      DRP-AI TVM Runtime inference
         ***********************************************************************/
@@ -382,7 +348,10 @@ void * thread_infer(void * p_param)
 
     /* Do post process to get bounding boxes */
         yolov2_parser(drpai_output_buf);
-        HEAD_COUNT = draw_bounding_box();
+        fprintf(outputfile, "{%lld:\t[\n", tp_msec
+        );
+    
+        HEAD_COUNT = draw_bounding_box(outputfile);
 
         /* Postprocess time end */
         auto t5 = std::chrono::high_resolution_clock::now();
@@ -401,11 +370,14 @@ void * thread_infer(void * p_param)
         FPS=1000/TOTAL_TIME;
 
         
-        outputfile << PREPROCESS_START_TIME << " " << HEAD_COUNT  << " " << FPS << " " << TOTAL_TIME << " " << INF_TIME << " " << PRE_PROC_TIME << " " << POST_PROC_TIME << "\n";
+        //outputfile << PREPROCESS_START_TIME << " " << HEAD_COUNT  << " " << FPS << " " << TOTAL_TIME << " " << INF_TIME << " " << PRE_PROC_TIME << " " << POST_PROC_TIME << "\n";
+        fprintf(outputfile, "], count: %d, fps: %f, total_time: %f, Inference time: %f, Pre Proc time: %f, Post Process time: %f}\n",
+                HEAD_COUNT, FPS, TOTAL_TIME, INF_TIME, PRE_PROC_TIME, POST_PROC_TIME);
         printf ( "ID: %X,\tInference:\t\tFPS: %f \n",  p_pipeline->thread_id, FPS);
         auto FILE_END_TIME = std::chrono::seconds(1s).count();
     }
     // file close
-    outputfile.close();
+    //outputfile.close();
+    fclose(outputfile);
 }
 
